@@ -1,6 +1,7 @@
 import { formatTime, getBadgeClass } from '../../utils/formatters';
 import { Trash2 } from 'lucide-react';
 import EmoteRenderer from './EmoteRenderer';
+import LinkPreview from './LinkPreview';
 import { parseMessageWithEmotes } from '../../hooks/useEmotes';
 import { useProfileCardStore } from '../../stores/profileCardStore';
 
@@ -68,6 +69,11 @@ function MessageItem({ message, showChannel = true, channelId = null }) {
           <p className={`text-white break-words ${message.is_deleted ? 'line-through text-gray-400' : ''}`}>
             <EmoteRenderer parts={messageParts} />
           </p>
+
+          {/* Link previews */}
+          {!message.is_deleted && (
+            <LinkPreview text={message.message_text} />
+          )}
         </div>
       </div>
     </div>

@@ -26,6 +26,7 @@ import messagesRouter from './routes/messages.js';
 import usersRouter from './routes/users.js';
 import modActionsRouter from './routes/modActions.js';
 import channelsRouter, { setTwitchService } from './routes/channels.js';
+import utilsRouter from './routes/utils.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -64,6 +65,7 @@ app.use('/api/messages', messagesRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/mod-actions', modActionsRouter);
 app.use('/api/channels', channelsRouter);
+app.use('/api/utils', utilsRouter);
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
