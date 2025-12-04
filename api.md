@@ -15,6 +15,7 @@
   - [Users](#users)
   - [Mod Actions](#mod-actions)
   - [Channels](#channels)
+  - [Utilities](#utilities)
   - [System](#system)
 - [WebSocket API](#websocket-api)
 - [Error Handling](#error-handling)
@@ -891,6 +892,78 @@ Rejoin a channel's IRC connection (useful for fixing connection issues).
 
 ---
 
+### Utilities
+
+#### Link Preview
+`GET /api/utils/link-preview`
+
+Fetch Open Graph metadata for a URL. Used for generating rich link previews in chat messages. Supports special handling for YouTube, TikTok, Twitter/X, and generic websites.
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `url` | string | **Yes** | The URL to fetch metadata for |
+
+**Response:**
+```json
+{
+  "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+  "title": "Rick Astley - Never Gonna Give You Up (Official Music Video)",
+  "description": "The official video for "Never Gonna Give You Up" by Rick Astley...",
+  "image": "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg",
+  "siteName": "YouTube",
+  "type": "video.other",
+  "favicon": "https://www.youtube.com/favicon.ico"
+}
+```
+
+**Response for Direct Image URLs:**
+```json
+{
+  "url": "https://example.com/image.png",
+  "type": "image",
+  "image": "https://example.com/image.png",
+  "title": "image.png"
+}
+```
+
+**Features:**
+- Extracts Open Graph (`og:`) meta tags
+- Falls back to Twitter Card meta tags
+- Falls back to standard `<title>` and `<meta name="description">`
+- Extracts favicon
+- 30-minute server-side cache
+- 5-second timeout for external requests
+
+**Errors:**
+- `400`: URL is required
+- `400`: Invalid URL
+- `400`: Failed to fetch URL
+- `400`: URL does not return HTML
+- `408`: Request timeout
+- `500`: Failed to fetch link metadata
+
+**Example:**
+```bash
+# Get metadata for a YouTube video
+curl "http://localhost:3000/api/utils/link-preview?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+
+# Get metadata for a tweet
+curl "http://localhost:3000/api/utils/link-preview?url=https://x.com/elonmusk/status/123456789"
+```
+
+**Supported Platforms with Special Handling (Client-Side):**
+
+| Platform | Detection | Features |
+|----------|-----------|----------|
+| YouTube | `youtube.com`, `youtu.be` | Video ID extraction, thumbnail URLs, embedded player, title & description on left, video on right |
+| TikTok | `tiktok.com` | Video ID extraction, embedded player |
+| Twitter/X | `twitter.com`, `x.com` | Tweet ID extraction, embedded tweet with dark theme |
+| Generic | All other URLs | Standard Open Graph metadata card |
+
+---
+
 ### System
 
 #### Health Check
@@ -1347,6 +1420,7 @@ rate_limit: 100 requests/minute
 | PATCH | `/channels/:name` | Update channel | Body: `{ "is_active": bool }` |
 | DELETE | `/channels/:name` | Remove channel | - |
 | POST | `/channels/:name/rejoin` | Rejoin IRC | - |
+| GET | `/utils/link-preview` | Get URL metadata | `url` (required) |
 | GET | `/health` | Health check | - |
 | GET | `/stats` | System stats | - |
 
@@ -1362,12 +1436,36 @@ rate_limit: 100 requests/minute
 **Server → Client:**
 | Event | Description |
 |-------|-------------|
-| `chat_message` | New message in subscribed channel |
+| `message` | New message in subscribed channel |
 | `message_deleted` | Message was deleted |
 | `mod_action` | Ban/timeout occurred |
+| `messages_flushed` | Messages batch saved to database (for cache invalidation) |
 | `subscribed` | Subscription confirmed |
 | `unsubscribed` | Unsubscription confirmed |
 | `pong` | Response to ping |
+
+#### messages_flushed Event
+
+Emitted when a batch of messages is flushed from the server's buffer to the database. Useful for invalidating cached message queries after a mod action to ensure the latest messages are fetched.
+
+**Payload:**
+```json
+{
+  "usernames": ["user1", "user2"],
+  "channels": ["channel1", "channel2"],
+  "count": 42,
+  "timestamp": "2024-01-15T12:00:00.000Z"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `usernames` | `string[]` | Lowercase usernames of users whose messages were saved |
+| `channels` | `string[]` | Lowercase channel names where messages were saved |
+| `count` | `number` | Total number of messages flushed |
+| `timestamp` | `string` | ISO 8601 timestamp of the flush |
+
+**Use Case:** When a mod action (ban/timeout) occurs, the triggering message may still be in the server's buffer. Listen for `messages_flushed` and check if the target user is in the `usernames` array before fetching their messages to ensure you get the complete history.
 
 ### Data Type Reference
 

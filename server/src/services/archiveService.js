@@ -9,6 +9,14 @@ class ArchiveService {
     this.maxBufferSize = 1000;
     this.flushTimer = null;
     this.isProcessing = false;
+    this.websocketService = null;
+  }
+
+  /**
+   * Set the websocket service for broadcasting flush events
+   */
+  setWebsocketService(websocketService) {
+    this.websocketService = websocketService;
   }
 
   /**
@@ -63,6 +71,20 @@ class ArchiveService {
     try {
       const inserted = await Message.bulkCreate(messagesToInsert);
       logger.info(`Flushed ${inserted.length} messages to database`);
+      
+      // Notify clients that messages have been flushed
+      if (this.websocketService && inserted.length > 0) {
+        // Extract unique usernames and channels from flushed messages
+        const flushedUsers = [...new Set(messagesToInsert.map(m => m.username?.toLowerCase()).filter(Boolean))];
+        const flushedChannels = [...new Set(messagesToInsert.map(m => m.channelName?.toLowerCase()).filter(Boolean))];
+        
+        this.websocketService.broadcastToAll('messages_flushed', {
+          usernames: flushedUsers,
+          channels: flushedChannels,
+          count: inserted.length,
+          timestamp: new Date().toISOString()
+        });
+      }
     } catch (error) {
       logger.error('Error flushing message buffer:', error.message);
       // Re-queue failed messages (with some limit to prevent infinite loop)

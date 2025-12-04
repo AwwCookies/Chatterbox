@@ -152,6 +152,9 @@ const startServer = async () => {
     // Initialize WebSocket
     websocketService.initialize(httpServer, corsOptions);
 
+    // Wire up websocket service to archive service for flush notifications
+    archiveService.setWebsocketService(websocketService);
+
     // Initialize Twitch service
     const twitchService = new TwitchService(archiveService, websocketService);
     global.twitchService = twitchService;

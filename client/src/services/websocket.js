@@ -56,6 +56,10 @@ class WebSocketService {
       this.emit('mod_action', data);
     });
 
+    this.socket.on('messages_flushed', (data) => {
+      this.emit('messages_flushed', data);
+    });
+
     this.socket.on('subscribed', (data) => {
       console.log('Subscribed to channels:', data.channels);
     });

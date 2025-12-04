@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDateTime, formatDuration, formatTime, formatRelative } from '../../utils/formatters';
 import { usersApi } from '../../services/api';
 import { useProfileCardStore } from '../../stores/profileCardStore';
 import EmoteRenderer from '../chat/EmoteRenderer';
 import { parseMessageWithEmotes } from '../../hooks/useEmotes';
 import LoadingSpinner from '../common/LoadingSpinner';
+import wsService from '../../services/websocket';
 import { 
   Ban, 
   Clock, 
@@ -21,6 +22,8 @@ import {
 
 function ModActionCard({ action, expanded: defaultExpanded = false }) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const [queryReady, setQueryReady] = useState(false);
+  const queryClient = useQueryClient();
   const openProfileCard = useProfileCardStore(state => state.openCard);
   
   const targetUsername = action.target_username || action.targetUsername;
@@ -29,19 +32,63 @@ function ModActionCard({ action, expanded: defaultExpanded = false }) {
   const actionType = action.action_type || action.actionType;
   const duration = action.duration_seconds || action.durationSeconds;
 
+  // Check if this is a recent mod action (within last 10 seconds) - memoize to prevent recalculation
+  const isRecentAction = useMemo(() => {
+    const actionAge = Date.now() - new Date(action.timestamp).getTime();
+    return actionAge < 10000;
+  }, [action.timestamp]);
+
+  // Listen for messages_flushed events to refetch when target user's messages are saved
+  useEffect(() => {
+    if (!isRecentAction || queryReady) return;
+
+    const handleMessagesFlushed = (data) => {
+      const flushedUsernames = data.usernames || [];
+      if (flushedUsernames.includes(targetUsername?.toLowerCase())) {
+        // Our target user's messages were just flushed to DB
+        queryClient.invalidateQueries({
+          queryKey: ['user', targetUsername, 'messages'],
+        });
+        setQueryReady(true);
+      }
+    };
+
+    const unsubscribe = wsService.on('messages_flushed', handleMessagesFlushed);
+    
+    // Fallback timeout in case flush event doesn't come (e.g., no new messages)
+    const fallbackTimer = setTimeout(() => {
+      if (!queryReady) {
+        setQueryReady(true);
+      }
+    }, 6000); // Slightly longer than the 5s flush interval
+
+    return () => {
+      unsubscribe();
+      clearTimeout(fallbackTimer);
+    };
+  }, [isRecentAction, queryReady, targetUsername, queryClient]);
+
+  // For non-recent actions, enable queries immediately
+  useEffect(() => {
+    if (!isRecentAction) {
+      setQueryReady(true);
+    }
+  }, [isRecentAction]);
+
   // Always fetch user's last message for compact view
   const { data: lastMessageData, isLoading: lastMessageLoading } = useQuery({
     queryKey: ['user', targetUsername, 'messages', { limit: 1, channel: channelName }],
     queryFn: () => usersApi.getMessages(targetUsername, { limit: 1, channel: channelName }).then(res => res.data),
-    enabled: !!targetUsername,
-    staleTime: 30000, // Cache for 30 seconds
+    enabled: !!targetUsername && queryReady,
+    staleTime: 0, // Always consider stale for mod action cards
   });
 
   // Fetch more messages when expanded
   const { data: messagesData, isLoading: messagesLoading } = useQuery({
     queryKey: ['user', targetUsername, 'messages', { limit: 5, channel: channelName }],
     queryFn: () => usersApi.getMessages(targetUsername, { limit: 5, channel: channelName }).then(res => res.data),
-    enabled: isExpanded && !!targetUsername,
+    enabled: isExpanded && !!targetUsername && queryReady,
+    staleTime: 0, // Always consider stale for mod action cards
   });
 
   // Fetch user info when expanded
@@ -144,7 +191,7 @@ function ModActionCard({ action, expanded: defaultExpanded = false }) {
               {/* Last Message - Always visible in compact view */}
               {!isExpanded && (
                 <div className="mt-2 pt-2 border-t border-gray-700/50">
-                  {lastMessageLoading ? (
+                  {(!queryReady || lastMessageLoading) ? (
                     <div className="flex items-center space-x-2 text-xs text-gray-500">
                       <MessageSquare className="w-3 h-3" />
                       <span>Loading last message...</span>
