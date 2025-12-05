@@ -4,6 +4,7 @@ import MessageList from '../components/chat/MessageList';
 import SearchBar from '../components/common/SearchBar';
 import Pagination from '../components/common/Pagination';
 import { MessageSquare, Filter } from 'lucide-react';
+import { useSettingsStore } from '../stores/settingsStore';
 
 function Messages() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -13,12 +14,12 @@ function Messages() {
     includeDeleted: false,
   });
   const [page, setPage] = useState(1);
-  const limit = 50;
+  const resultsPerPage = useSettingsStore(state => state.resultsPerPage);
 
   const params = {
     ...filters,
-    limit,
-    offset: (page - 1) * limit,
+    limit: resultsPerPage,
+    offset: (page - 1) * resultsPerPage,
     search: searchQuery || undefined,
   };
 
@@ -28,7 +29,7 @@ function Messages() {
 
   const messages = data?.messages || [];
   const total = data?.total || 0;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = Math.ceil(total / resultsPerPage);
 
   const handleSearch = (query) => {
     setSearchQuery(query);

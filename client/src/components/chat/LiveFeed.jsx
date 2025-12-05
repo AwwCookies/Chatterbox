@@ -1,10 +1,17 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Pause, Play, Trash2 } from 'lucide-react';
 import MessageItem from './MessageItem';
 import { useEmotes } from '../../hooks/useEmotes';
+import { useSettingsStore } from '../../stores/settingsStore';
 
 function LiveFeed({ messages = [], onClear, channels = [], showChannelName = true }) {
+  // Get settings
+  const autoScroll = useSettingsStore(state => state.autoScroll);
+  const maxLiveMessages = useSettingsStore(state => state.maxLiveMessages);
+  const pauseOnHover = useSettingsStore(state => state.pauseOnHover);
+  
   const [isPaused, setIsPaused] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
   const [displayMessages, setDisplayMessages] = useState([]);
   const containerRef = useRef(null);
   const { isLoaded, loadChannelEmotes } = useEmotes();
@@ -34,25 +41,41 @@ function LiveFeed({ messages = [], onClear, channels = [], showChannelName = tru
     });
   }, [messages, loadChannelEmotes, channelIdMap]);
 
-  useEffect(() => {
-    if (!isPaused) {
-      setDisplayMessages(messages);
-    }
-  }, [messages, isPaused]);
+  // Determine if we should pause (either manual pause or hover pause)
+  const shouldPause = isPaused || (pauseOnHover && isHovering);
 
+  // Limit messages to maxLiveMessages and update display
   useEffect(() => {
-    if (!isPaused && containerRef.current) {
+    if (!shouldPause) {
+      const limitedMessages = messages.slice(0, maxLiveMessages);
+      setDisplayMessages(limitedMessages);
+    }
+  }, [messages, shouldPause, maxLiveMessages]);
+
+  // Auto-scroll to top when new messages arrive (if enabled)
+  useEffect(() => {
+    if (autoScroll && !shouldPause && containerRef.current) {
       containerRef.current.scrollTop = 0;
     }
-  }, [displayMessages, isPaused]);
+  }, [displayMessages, shouldPause, autoScroll]);
+
+  const handleMouseEnter = useCallback(() => {
+    if (pauseOnHover) {
+      setIsHovering(true);
+    }
+  }, [pauseOnHover]);
+
+  const handleMouseLeave = useCallback(() => {
+    setIsHovering(false);
+  }, []);
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between p-3 bg-twitch-gray border-b border-gray-700">
         <div className="flex items-center space-x-2">
-          <div className={`w-2 h-2 rounded-full ${isPaused ? 'bg-yellow-500' : 'bg-green-500'}`} />
+          <div className={`w-2 h-2 rounded-full ${shouldPause ? 'bg-yellow-500' : 'bg-green-500'}`} />
           <span className="text-sm text-gray-300">
-            {isPaused ? 'Paused' : 'Live'} • {displayMessages.length} messages
+            {shouldPause ? (isHovering ? 'Paused (hover)' : 'Paused') : 'Live'} • {displayMessages.length} messages
           </span>
         </div>
 
@@ -78,6 +101,8 @@ function LiveFeed({ messages = [], onClear, channels = [], showChannelName = tru
       <div 
         ref={containerRef}
         className="flex-1 overflow-y-auto"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
       >
         {displayMessages.length === 0 ? (
           <div className="text-center py-8 text-gray-400">

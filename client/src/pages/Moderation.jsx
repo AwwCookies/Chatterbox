@@ -5,6 +5,7 @@ import Pagination from '../components/common/Pagination';
 import { Shield, Filter, BarChart3 } from 'lucide-react';
 import { formatNumber, capitalize } from '../utils/formatters';
 import { ACTION_TYPES } from '../utils/constants';
+import { useSettingsStore } from '../stores/settingsStore';
 
 function Moderation() {
   const [filters, setFilters] = useState({
@@ -14,12 +15,12 @@ function Moderation() {
     target: '',
   });
   const [page, setPage] = useState(1);
-  const limit = 50;
+  const resultsPerPage = useSettingsStore(state => state.resultsPerPage);
 
   const params = {
     ...filters,
-    limit,
-    offset: (page - 1) * limit,
+    limit: resultsPerPage,
+    offset: (page - 1) * resultsPerPage,
   };
 
   const { data, isLoading, error } = useModActions(params);
@@ -27,7 +28,7 @@ function Moderation() {
 
   const actions = data?.actions || [];
   const total = data?.total || 0;
-  const totalPages = Math.ceil(total / limit);
+  const totalPages = Math.ceil(total / resultsPerPage);
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));

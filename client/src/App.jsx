@@ -9,12 +9,20 @@ import Channel from './pages/Channel'
 import Moderation from './pages/Moderation'
 import Live from './pages/Live'
 import Channels from './pages/Channels'
+import Settings from './pages/Settings'
 import ProfileCardContainer from './components/user/ProfileCardContainer'
+import ToastContainer from './components/common/ToastContainer'
+import CommandPalette from './components/common/CommandPalette'
+import ErrorBoundary from './components/common/ErrorBoundary'
 import { useEmotes } from './hooks/useEmotes'
+import { useSettingsStore } from './stores/settingsStore'
 
 function App() {
   // Initialize global emotes early
   const { isLoaded } = useEmotes();
+  const sidebarCollapsed = useSettingsStore(state => state.sidebarCollapsed);
+  const theme = useSettingsStore(state => state.theme);
+  const accentColor = useSettingsStore(state => state.accentColor);
   
   useEffect(() => {
     if (isLoaded) {
@@ -22,26 +30,82 @@ function App() {
     }
   }, [isLoaded]);
 
+  const fontSize = useSettingsStore(state => state.fontSize);
+  const compactMode = useSettingsStore(state => state.compactMode);
+
+  // Apply theme, accent color, font size, and compact mode to root element
+  useEffect(() => {
+    const root = document.documentElement;
+    
+    // Handle theme
+    root.classList.remove('dark', 'light');
+    if (theme === 'system') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      root.classList.add(prefersDark ? 'dark' : 'light');
+    } else {
+      root.classList.add(theme);
+    }
+    
+    // Handle accent color
+    root.classList.remove('accent-purple', 'accent-blue', 'accent-green', 'accent-pink', 'accent-orange', 'accent-red');
+    root.classList.add(`accent-${accentColor}`);
+    
+    // Handle font size
+    root.classList.remove('font-size-small', 'font-size-medium', 'font-size-large');
+    root.classList.add(`font-size-${fontSize}`);
+    
+    // Handle compact mode
+    root.classList.toggle('compact-mode', compactMode);
+  }, [theme, accentColor, fontSize, compactMode]);
+
+  // Listen for system theme changes
+  useEffect(() => {
+    if (theme !== 'system') return;
+    
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e) => {
+      const root = document.documentElement;
+      root.classList.remove('dark', 'light');
+      root.classList.add(e.matches ? 'dark' : 'light');
+    };
+    
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, [theme]);
+
+  // Request notification permission when enabled
+  useEffect(() => {
+    const enableNotifications = useSettingsStore.getState().enableNotifications;
+    if (enableNotifications && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
   return (
     <div className="min-h-screen bg-twitch-dark text-twitch-light">
       <Navbar />
-      <div className="flex">
+      <div className="flex pt-14">
         <Sidebar />
-        <main className="flex-1 p-6 ml-64">
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/messages" element={<Messages />} />
-            <Route path="/user/:username" element={<User />} />
-            <Route path="/channel/:name" element={<Channel />} />
-            <Route path="/moderation" element={<Moderation />} />
-            <Route path="/live" element={<Live />} />
-            <Route path="/channels" element={<Channels />} />
-          </Routes>
+        <main className={`flex-1 p-6 transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/messages" element={<Messages />} />
+              <Route path="/user/:username" element={<User />} />
+              <Route path="/channel/:name" element={<Channel />} />
+              <Route path="/moderation" element={<Moderation />} />
+              <Route path="/live" element={<Live />} />
+              <Route path="/channels" element={<Channels />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </ErrorBoundary>
         </main>
       </div>
       
-      {/* Global profile card container */}
+      {/* Global components */}
       <ProfileCardContainer />
+      <ToastContainer />
+      <CommandPalette />
     </div>
   )
 }

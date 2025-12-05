@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { channelsApi } from '../../services/api';
+import { useSettingsStore } from '../../stores/settingsStore';
 import { 
   Home, 
   MessageSquare, 
@@ -8,7 +9,11 @@ import {
   Radio, 
   Hash,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  ChevronLeft,
+  Settings,
+  PanelLeftClose,
+  PanelLeft
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -22,6 +27,8 @@ const navItems = [
 
 function Sidebar() {
   const [channelsExpanded, setChannelsExpanded] = useState(true);
+  const sidebarCollapsed = useSettingsStore(state => state.sidebarCollapsed);
+  const toggleSidebar = useSettingsStore(state => state.toggleSetting);
   
   const { data: channelsData } = useQuery({
     queryKey: ['channels', { active: true }],
@@ -32,30 +39,46 @@ function Sidebar() {
   const activeChannels = channelsData?.channels || [];
 
   return (
-    <aside className="w-64 bg-twitch-gray border-r border-gray-700 fixed left-0 top-14 bottom-0 overflow-y-auto">
-      <nav className="p-4">
+    <aside className={`bg-twitch-gray border-r border-gray-700 fixed left-0 top-14 bottom-0 overflow-y-auto transition-all duration-300 ${
+      sidebarCollapsed ? 'w-16' : 'w-64'
+    }`}>
+      {/* Collapse Toggle */}
+      <button
+        onClick={() => toggleSidebar('sidebarCollapsed')}
+        className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors z-10"
+        title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      >
+        {sidebarCollapsed ? (
+          <PanelLeft className="w-4 h-4" />
+        ) : (
+          <PanelLeftClose className="w-4 h-4" />
+        )}
+      </button>
+
+      <nav className={`p-4 ${sidebarCollapsed ? 'pt-12' : ''}`}>
         <ul className="space-y-1">
           {navItems.map(({ path, icon: Icon, label }) => (
             <li key={path}>
               <NavLink
                 to={path}
+                title={sidebarCollapsed ? label : undefined}
                 className={({ isActive }) =>
-                  `flex items-center space-x-3 px-3 py-2 rounded-md transition-colors ${
+                  `flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} px-3 py-2 rounded-md transition-colors ${
                     isActive
                       ? 'bg-twitch-purple text-white'
                       : 'text-gray-300 hover:bg-gray-700 hover:text-white'
                   }`
                 }
               >
-                <Icon className="w-5 h-5" />
-                <span>{label}</span>
+                <Icon className="w-5 h-5 flex-shrink-0" />
+                {!sidebarCollapsed && <span>{label}</span>}
               </NavLink>
             </li>
           ))}
         </ul>
 
         {/* Active Channels */}
-        {activeChannels.length > 0 && (
+        {activeChannels.length > 0 && !sidebarCollapsed && (
           <div className="mt-6">
             <button
               onClick={() => setChannelsExpanded(!channelsExpanded)}
@@ -83,8 +106,8 @@ function Sidebar() {
                         }`
                       }
                     >
-                      <span className="w-2 h-2 bg-green-500 rounded-full" />
-                      <span>#{channel.display_name || channel.name}</span>
+                      <span className="w-2 h-2 bg-green-500 rounded-full flex-shrink-0" />
+                      <span className="truncate">#{channel.display_name || channel.name}</span>
                     </NavLink>
                   </li>
                 ))}
@@ -92,6 +115,49 @@ function Sidebar() {
             )}
           </div>
         )}
+
+        {/* Collapsed channels indicator */}
+        {activeChannels.length > 0 && sidebarCollapsed && (
+          <div className="mt-6 flex flex-col items-center">
+            <div className="w-8 h-px bg-gray-700 mb-4" />
+            {activeChannels.slice(0, 5).map(channel => (
+              <NavLink
+                key={channel.id}
+                to={`/channel/${channel.name}`}
+                title={channel.display_name || channel.name}
+                className={({ isActive }) =>
+                  `w-8 h-8 rounded-full flex items-center justify-center mb-1 transition-colors ${
+                    isActive
+                      ? 'bg-twitch-purple text-white'
+                      : 'bg-gray-700 text-gray-400 hover:bg-gray-600 hover:text-white'
+                  }`
+                }
+              >
+                <span className="text-xs font-bold">
+                  {(channel.display_name || channel.name).charAt(0).toUpperCase()}
+                </span>
+              </NavLink>
+            ))}
+          </div>
+        )}
+
+        {/* Settings Link */}
+        <div className={`mt-auto pt-4 border-t border-gray-700 ${sidebarCollapsed ? 'mt-6' : 'mt-8'}`}>
+          <NavLink
+            to="/settings"
+            title={sidebarCollapsed ? 'Settings' : undefined}
+            className={({ isActive }) =>
+              `flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} px-3 py-2 rounded-md transition-colors ${
+                isActive
+                  ? 'bg-twitch-purple text-white'
+                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+              }`
+            }
+          >
+            <Settings className="w-5 h-5 flex-shrink-0" />
+            {!sidebarCollapsed && <span>Settings</span>}
+          </NavLink>
+        </div>
       </nav>
     </aside>
   );

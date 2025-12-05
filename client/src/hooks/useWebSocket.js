@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { create } from 'zustand';
 import wsService from '../services/websocket';
+import notificationService from '../services/notifications';
 
 // Zustand store for WebSocket state (allows external subscriptions)
 export const useWebSocketStore = create((set, get) => ({
@@ -15,6 +16,9 @@ export const useWebSocketStore = create((set, get) => ({
   },
   
   addModAction: (action) => {
+    // Trigger notification for ban/timeout
+    notificationService.notifyModAction(action);
+    
     set(state => ({
       modActions: [action, ...state.modActions].slice(0, 100),
     }));
@@ -36,6 +40,7 @@ export const useWebSocketStore = create((set, get) => ({
 
 export const useWebSocket = (channels = []) => {
   const [isConnected, setIsConnected] = useState(false);
+  const prevChannelsRef = useRef('');
   const { messages, modActions, clearMessages, clearModActions } = useWebSocketStore();
 
   useEffect(() => {
@@ -55,11 +60,17 @@ export const useWebSocket = (channels = []) => {
   }, []);
 
   useEffect(() => {
+    const channelKey = channels.sort().join(',');
+    
+    // Only subscribe/clear if we have channels and they actually changed
     if (channels.length > 0 && isConnected) {
-      // Clear old data when switching channels
-      clearMessages();
-      clearModActions();
+      // Only clear when switching between different channel sets
+      if (prevChannelsRef.current && prevChannelsRef.current !== channelKey) {
+        clearMessages();
+        clearModActions();
+      }
       wsService.subscribe(channels);
+      prevChannelsRef.current = channelKey;
     }
 
     return () => {
