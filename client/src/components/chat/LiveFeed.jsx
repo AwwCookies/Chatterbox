@@ -3,7 +3,7 @@ import { Pause, Play, Trash2 } from 'lucide-react';
 import MessageItem from './MessageItem';
 import { useEmotes } from '../../hooks/useEmotes';
 
-function LiveFeed({ messages = [], onClear, channels = [] }) {
+function LiveFeed({ messages = [], onClear, channels = [], showChannelName = true }) {
   const [isPaused, setIsPaused] = useState(false);
   const [displayMessages, setDisplayMessages] = useState([]);
   const containerRef = useRef(null);
@@ -100,7 +100,7 @@ function LiveFeed({ messages = [], onClear, channels = [] }) {
                   emotes: message.emotes || [],
                   channel_twitch_id: channelTwitchId,
                 }}
-                showChannel={true}
+                showChannel={showChannelName}
                 channelId={channelTwitchId}
               />
             );

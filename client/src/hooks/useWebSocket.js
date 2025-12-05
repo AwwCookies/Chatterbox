@@ -56,6 +56,9 @@ export const useWebSocket = (channels = []) => {
 
   useEffect(() => {
     if (channels.length > 0 && isConnected) {
+      // Clear old data when switching channels
+      clearMessages();
+      clearModActions();
       wsService.subscribe(channels);
     }
 
@@ -64,7 +67,7 @@ export const useWebSocket = (channels = []) => {
         wsService.unsubscribe(channels);
       }
     };
-  }, [channels, isConnected]);
+  }, [channels.join(','), isConnected]); // Use join to detect actual channel changes
 
   useEffect(() => {
     const handleMessage = (data) => {

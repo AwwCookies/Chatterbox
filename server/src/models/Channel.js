@@ -154,6 +154,41 @@ class Channel {
     );
     return result.rows.map(r => r.name);
   }
+
+  /**
+   * Get top users by message count in a channel
+   */
+  static async getTopUsers(channelId, limit = 10, since = null, until = null) {
+    const params = [channelId, limit];
+    let dateFilter = '';
+    
+    if (since) {
+      params.push(since);
+      dateFilter += ` AND m.timestamp >= $${params.length}`;
+    }
+    if (until) {
+      params.push(until);
+      dateFilter += ` AND m.timestamp <= $${params.length}`;
+    }
+    
+    const result = await query(`
+      SELECT 
+        u.id,
+        u.username,
+        u.display_name,
+        u.twitch_id,
+        COUNT(m.id) as message_count,
+        MAX(m.timestamp) as last_message_at
+      FROM users u
+      JOIN messages m ON u.id = m.user_id
+      WHERE m.channel_id = $1 ${dateFilter}
+      GROUP BY u.id, u.username, u.display_name, u.twitch_id
+      ORDER BY message_count DESC
+      LIMIT $2
+    `, params);
+    
+    return result.rows;
+  }
 }
 
 export default Channel;

@@ -201,4 +201,29 @@ router.post('/:name/rejoin', async (req, res) => {
   }
 });
 
+/**
+ * GET /api/channels/:name/top-users
+ * Get top users by message count in a channel
+ */
+router.get('/:name/top-users', async (req, res) => {
+  try {
+    const name = sanitizeChannelName(req.params.name);
+    const channel = await Channel.getByName(name);
+
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    const limit = Math.min(parseInt(req.query.limit) || 10, 100);
+    const since = validateDate(req.query.since);
+    const until = validateDate(req.query.until);
+
+    const topUsers = await Channel.getTopUsers(channel.id, limit, since, until);
+    res.json({ users: topUsers });
+  } catch (error) {
+    logger.error('Error fetching top users:', error.message);
+    res.status(500).json({ error: 'Failed to fetch top users' });
+  }
+});
+
 export default router;

@@ -1,9 +1,10 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { channelsApi } from '../services/api';
 import { formatNumber, formatDateTime } from '../utils/formatters';
 import LoadingSpinner from '../components/common/LoadingSpinner';
-import { Hash, Plus, Trash2, RefreshCw, Power, PowerOff, MessageSquare } from 'lucide-react';
+import { Hash, Plus, Trash2, RefreshCw, Power, PowerOff, MessageSquare, ExternalLink } from 'lucide-react';
 
 function Channels() {
   const [newChannelName, setNewChannelName] = useState('');
@@ -164,9 +165,13 @@ function ChannelRow({ channel, onToggle, onRejoin, onDelete, isUpdating }) {
       <div className="flex items-center space-x-4">
         <div className={`w-2 h-2 rounded-full ${channel.is_active ? 'bg-green-500' : 'bg-gray-500'}`} />
         <div>
-          <p className="font-medium text-white">
-            #{channel.display_name || channel.name}
-          </p>
+          <Link 
+            to={`/channel/${channel.name}`}
+            className="font-medium text-white hover:text-twitch-purple hover:underline flex items-center space-x-1"
+          >
+            <span>#{channel.display_name || channel.name}</span>
+            <ExternalLink className="w-3 h-3" />
+          </Link>
           <div className="flex items-center space-x-3 text-xs text-gray-400 mt-1">
             <span className="flex items-center">
               <MessageSquare className="w-3 h-3 mr-1" />

@@ -5,6 +5,7 @@ import Sidebar from './components/layout/Sidebar'
 import Home from './pages/Home'
 import Messages from './pages/Messages'
 import User from './pages/User'
+import Channel from './pages/Channel'
 import Moderation from './pages/Moderation'
 import Live from './pages/Live'
 import Channels from './pages/Channels'
@@ -31,6 +32,7 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/messages" element={<Messages />} />
             <Route path="/user/:username" element={<User />} />
+            <Route path="/channel/:name" element={<Channel />} />
             <Route path="/moderation" element={<Moderation />} />
             <Route path="/live" element={<Live />} />
             <Route path="/channels" element={<Channels />} />

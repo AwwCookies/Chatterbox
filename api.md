@@ -892,6 +892,46 @@ Rejoin a channel's IRC connection (useful for fixing connection issues).
 
 ---
 
+#### Get Top Users
+`GET /api/channels/:name/top-users`
+
+Get the top chatters in a channel by message count.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Channel name |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | 10 | Number of users to return (max 100) |
+| `since` | ISO 8601 date | - | Only count messages after this date |
+| `until` | ISO 8601 date | - | Only count messages before this date |
+
+**Response:**
+```json
+{
+  "users": [
+    {
+      "id": 1,
+      "username": "topchatuser",
+      "display_name": "TopChatUser",
+      "twitch_id": "123456789",
+      "message_count": 5420,
+      "last_message_at": "2024-01-15T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+**Errors:**
+- `404`: Channel not found
+
+---
+
 ### Utilities
 
 #### Link Preview
@@ -1416,6 +1456,7 @@ rate_limit: 100 requests/minute
 | GET | `/channels` | List channels | `active` |
 | GET | `/channels/:name` | Get channel info | - |
 | GET | `/channels/:name/stats` | Get channel stats | `since`, `until` |
+| GET | `/channels/:name/top-users` | Get top chatters | `limit`, `since`, `until` |
 | POST | `/channels` | Add channel | Body: `{ "name": "..." }` |
 | PATCH | `/channels/:name` | Update channel | Body: `{ "is_active": bool }` |
 | DELETE | `/channels/:name` | Remove channel | - |

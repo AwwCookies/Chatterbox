@@ -135,8 +135,9 @@ router.get('/link-preview', async (req, res) => {
   }
 
   // Validate URL
+  let urlObj;
   try {
-    new URL(url);
+    urlObj = new URL(url);
   } catch {
     return res.status(400).json({ error: 'Invalid URL' });
   }
@@ -151,50 +152,33 @@ router.get('/link-preview', async (req, res) => {
   }
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    let metadata = null;
 
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; ChatterboxBot/1.0; +https://github.com/AwwCookies/Chatterbox)',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-      },
-      signal: controller.signal,
-      redirect: 'follow',
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      return res.status(400).json({ error: 'Failed to fetch URL' });
+    // Special handling for TikTok - use oEmbed API
+    if (urlObj.hostname.includes('tiktok.com')) {
+      metadata = await fetchTikTokMetadata(url);
+    }
+    // Special handling for Twitch clips - use oEmbed API
+    else if (urlObj.hostname.includes('twitch.tv') && (url.includes('/clip/') || urlObj.hostname === 'clips.twitch.tv')) {
+      metadata = await fetchTwitchClipMetadata(url);
+    }
+    // Special handling for Twitch VODs
+    else if (urlObj.hostname.includes('twitch.tv') && url.includes('/videos/')) {
+      metadata = await fetchTwitchVideoMetadata(url);
     }
 
-    const contentType = response.headers.get('content-type') || '';
-    
-    // Handle different content types
-    if (contentType.includes('image/')) {
-      const metadata = {
-        url,
-        type: 'image',
-        image: url,
-        title: url.split('/').pop() || 'Image',
-      };
+    // Fall back to standard HTML scraping
+    if (!metadata) {
+      metadata = await fetchStandardMetadata(url);
+    }
+
+    if (metadata) {
+      // Cache the result
       metadataCache.set(url, { data: metadata, timestamp: Date.now() });
       return res.json(metadata);
     }
 
-    if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
-      return res.status(400).json({ error: 'URL does not return HTML' });
-    }
-
-    const html = await response.text();
-    const metadata = extractMetadata(html, url);
-
-    // Cache the result
-    metadataCache.set(url, { data: metadata, timestamp: Date.now() });
-
-    res.json(metadata);
+    res.status(400).json({ error: 'Failed to fetch metadata' });
   } catch (error) {
     if (error.name === 'AbortError') {
       return res.status(408).json({ error: 'Request timeout' });
@@ -203,5 +187,184 @@ router.get('/link-preview', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch link metadata' });
   }
 });
+
+/**
+ * Fetch TikTok metadata using oEmbed API
+ */
+async function fetchTikTokMetadata(url) {
+  try {
+    const oEmbedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(url)}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(oEmbedUrl, {
+      headers: {
+        'Accept': 'application/json',
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      logger.warn('TikTok oEmbed failed:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    
+    return {
+      url,
+      title: data.title || 'TikTok Video',
+      description: null,
+      image: data.thumbnail_url || null,
+      siteName: 'TikTok',
+      type: 'video',
+      favicon: 'https://www.tiktok.com/favicon.ico',
+      author: data.author_name || null,
+      authorUrl: data.author_url || null,
+    };
+  } catch (error) {
+    logger.warn('Error fetching TikTok metadata:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Fetch Twitch clip metadata using oEmbed API
+ */
+async function fetchTwitchClipMetadata(url) {
+  try {
+    const oEmbedUrl = `https://api.twitch.tv/v5/oembed?url=${encodeURIComponent(url)}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    // Try Twitch's parent domain approach first
+    let response = await fetch(oEmbedUrl, {
+      headers: {
+        'Accept': 'application/json',
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        url,
+        title: data.title || 'Twitch Clip',
+        description: null,
+        image: data.thumbnail_url || null,
+        siteName: 'Twitch',
+        type: 'video',
+        favicon: 'https://www.twitch.tv/favicon.ico',
+        author: data.author_name || null,
+      };
+    }
+
+    // Fallback: Try to scrape the page with a browser-like user agent
+    return await fetchStandardMetadata(url, true);
+  } catch (error) {
+    logger.warn('Error fetching Twitch clip metadata:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Fetch Twitch video/VOD metadata
+ */
+async function fetchTwitchVideoMetadata(url) {
+  try {
+    // Try oEmbed first
+    const oEmbedUrl = `https://api.twitch.tv/v5/oembed?url=${encodeURIComponent(url)}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(oEmbedUrl, {
+      headers: {
+        'Accept': 'application/json',
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (response.ok) {
+      const data = await response.json();
+      return {
+        url,
+        title: data.title || 'Twitch Video',
+        description: null,
+        image: data.thumbnail_url || null,
+        siteName: 'Twitch',
+        type: 'video',
+        favicon: 'https://www.twitch.tv/favicon.ico',
+        author: data.author_name || null,
+      };
+    }
+
+    // Fallback to standard scraping
+    return await fetchStandardMetadata(url, true);
+  } catch (error) {
+    logger.warn('Error fetching Twitch video metadata:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Standard HTML metadata scraping
+ */
+async function fetchStandardMetadata(url, useBrowserUserAgent = false) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    const headers = {
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+    };
+
+    if (useBrowserUserAgent) {
+      headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+    } else {
+      headers['User-Agent'] = 'Mozilla/5.0 (compatible; ChatterboxBot/1.0; +https://github.com/AwwCookies/Chatterbox)';
+    }
+
+    const response = await fetch(url, {
+      headers,
+      signal: controller.signal,
+      redirect: 'follow',
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    
+    // Handle different content types
+    if (contentType.includes('image/')) {
+      return {
+        url,
+        type: 'image',
+        image: url,
+        title: url.split('/').pop() || 'Image',
+      };
+    }
+
+    if (!contentType.includes('text/html') && !contentType.includes('application/xhtml')) {
+      return null;
+    }
+
+    const html = await response.text();
+    return extractMetadata(html, url);
+  } catch (error) {
+    logger.warn('Error in standard metadata fetch:', error.message);
+    return null;
+  }
+}
 
 export default router;
