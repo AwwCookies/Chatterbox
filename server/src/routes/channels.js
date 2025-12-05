@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import Channel from '../models/Channel.js';
+import Message from '../models/Message.js';
 import { validatePagination, validateDate, sanitizeChannelName } from '../utils/validators.js';
 import logger from '../utils/logger.js';
 
@@ -223,6 +224,41 @@ router.get('/:name/top-users', async (req, res) => {
   } catch (error) {
     logger.error('Error fetching top users:', error.message);
     res.status(500).json({ error: 'Failed to fetch top users' });
+  }
+});
+
+/**
+ * GET /api/channels/:name/links
+ * Get messages containing links in a channel
+ */
+router.get('/:name/links', async (req, res) => {
+  try {
+    const name = sanitizeChannelName(req.params.name);
+    const channel = await Channel.getByName(name);
+
+    if (!channel) {
+      return res.status(404).json({ error: 'Channel not found' });
+    }
+
+    const { limit, offset } = validatePagination(req.query);
+    const since = validateDate(req.query.since);
+    const until = validateDate(req.query.until);
+
+    const result = await Message.getMessagesWithLinks(channel.id, { 
+      limit, 
+      offset, 
+      since, 
+      until 
+    });
+    
+    res.json({ 
+      messages: result.messages, 
+      total: result.total,
+      channel 
+    });
+  } catch (error) {
+    logger.error('Error fetching channel links:', error.message);
+    res.status(500).json({ error: 'Failed to fetch channel links' });
   }
 });
 

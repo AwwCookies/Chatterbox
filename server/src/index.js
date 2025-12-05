@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -12,6 +13,7 @@ import express from 'express';
 import cors from 'cors';
 import { createServer } from 'http';
 import rateLimit from 'express-rate-limit';
+import { marked } from 'marked';
 
 import { testConnection } from './config/database.js';
 import logger from './utils/logger.js';
@@ -45,7 +47,7 @@ app.use(express.json());
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 100, // 100 requests per minute
+  max: 10000, // 10000 requests per minute
   message: { error: 'Too many requests, please try again later' }
 });
 app.use('/api', limiter);
@@ -76,6 +78,152 @@ app.get('/api/health', async (req, res) => {
     uptime: process.uptime(),
     archive: archiveService.getStats()
   });
+});
+
+// API Documentation at root
+app.get('/', async (req, res) => {
+  try {
+    // In Docker: /app/api.md (mounted), locally: ../../api.md
+    const apiMdPath = process.env.NODE_ENV === 'production' 
+      ? '/app/api.md'
+      : path.resolve(__dirname, '../../api.md');
+    const markdown = await fs.readFile(apiMdPath, 'utf-8');
+    const htmlContent = marked(markdown);
+    
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chatterbox API Documentation</title>
+  <style>
+    :root {
+      --bg-primary: #0e0e10;
+      --bg-secondary: #18181b;
+      --bg-tertiary: #1f1f23;
+      --text-primary: #efeff1;
+      --text-secondary: #adadb8;
+      --accent: #9147ff;
+      --accent-hover: #772ce8;
+      --border: #3d3d40;
+      --code-bg: #26262c;
+      --success: #00c853;
+      --warning: #ff9800;
+      --error: #f44336;
+      --info: #2196f3;
+    }
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    h1 { color: var(--accent); margin-bottom: 1rem; font-size: 2.5rem; border-bottom: 2px solid var(--accent); padding-bottom: 0.5rem; }
+    h2 { color: var(--text-primary); margin: 2rem 0 1rem; font-size: 1.75rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+    h3 { color: var(--accent); margin: 1.5rem 0 0.75rem; font-size: 1.25rem; }
+    h4 { color: var(--text-secondary); margin: 1rem 0 0.5rem; font-size: 1.1rem; }
+    
+    p { margin-bottom: 1rem; color: var(--text-secondary); }
+    
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-hover); text-decoration: underline; }
+    
+    code {
+      background-color: var(--code-bg);
+      padding: 0.2rem 0.4rem;
+      border-radius: 4px;
+      font-family: 'Fira Code', 'Consolas', monospace;
+      font-size: 0.9em;
+      color: var(--accent);
+    }
+    
+    pre {
+      background-color: var(--code-bg);
+      padding: 1rem;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 1rem 0;
+      border: 1px solid var(--border);
+    }
+    
+    pre code {
+      background: none;
+      padding: 0;
+      color: var(--text-primary);
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      background-color: var(--bg-secondary);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    th {
+      background-color: var(--bg-tertiary);
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    
+    tr:hover { background-color: var(--bg-tertiary); }
+    
+    blockquote {
+      border-left: 4px solid var(--accent);
+      padding-left: 1rem;
+      margin: 1rem 0;
+      color: var(--text-secondary);
+      background-color: var(--bg-secondary);
+      padding: 1rem;
+      border-radius: 0 8px 8px 0;
+    }
+    
+    ul, ol { margin: 1rem 0; padding-left: 2rem; color: var(--text-secondary); }
+    li { margin: 0.5rem 0; }
+    
+    hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 2rem 0;
+    }
+    
+    /* Method badges */
+    code:first-child {
+      font-weight: bold;
+    }
+    
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+  </style>
+</head>
+<body>
+  ${htmlContent}
+</body>
+</html>`;
+    
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  } catch (error) {
+    logger.error('Error serving API docs:', error.message);
+    res.status(500).json({ error: 'Failed to load API documentation' });
+  }
 });
 
 // Stats endpoint

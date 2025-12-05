@@ -65,3 +65,14 @@ export function useChannelTopUsers(channelName, options = {}) {
     enabled: !!channelName,
   });
 }
+
+/**
+ * Fetch messages with links for a specific channel
+ */
+export function useChannelLinks(channelName, options = {}) {
+  return useQuery({
+    queryKey: ['channel', channelName, 'links', options],
+    queryFn: () => channelsApi.getLinks(channelName, options).then(res => res.data),
+    enabled: !!channelName,
+  });
+}

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { channelsApi, usersApi, messagesApi } from '../../services/api';
+import { useUIStore } from '../../stores/uiStore';
 import { 
   Search, 
   Command, 
@@ -14,7 +15,8 @@ import {
   Settings,
   X,
   ArrowRight,
-  Clock
+  Clock,
+  Bug
 } from 'lucide-react';
 
 const staticCommands = [
@@ -23,7 +25,8 @@ const staticCommands = [
   { id: 'messages', type: 'page', icon: MessageSquare, label: 'Search Messages', path: '/messages' },
   { id: 'moderation', type: 'page', icon: Shield, label: 'View Moderation', path: '/moderation' },
   { id: 'channels', type: 'page', icon: Hash, label: 'Browse Channels', path: '/channels' },
-  { id: 'settings', type: 'page', icon: Settings, label: 'Open Settings', path: '/settings' },
+  { id: 'settings', type: 'action', icon: Settings, label: 'Open Settings', action: 'openSettings' },
+  { id: 'api-debug', type: 'action', icon: Bug, label: 'Toggle API Debug Panel', action: 'toggleApiDebug' },
 ];
 
 function CommandPalette() {
@@ -33,6 +36,8 @@ function CommandPalette() {
   const inputRef = useRef(null);
   const listRef = useRef(null);
   const navigate = useNavigate();
+  const openSettingsModal = useUIStore(state => state.openSettingsModal);
+  const toggleApiDebugPanel = useUIStore(state => state.toggleApiDebugPanel);
 
   // Fetch data for search
   const { data: channelsData } = useQuery({
@@ -54,10 +59,20 @@ function CommandPalette() {
   // Keyboard shortcut to open
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Cmd+K or Ctrl+K
+      // Cmd+K or Ctrl+K to open command palette
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
         setIsOpen(true);
+      }
+      // Cmd+, or Ctrl+, to open settings
+      if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+        e.preventDefault();
+        openSettingsModal();
+      }
+      // Cmd+Shift+D or Ctrl+Shift+D to toggle API debug
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        toggleApiDebugPanel();
       }
       // Escape to close
       if (e.key === 'Escape' && isOpen) {
@@ -67,7 +82,7 @@ function CommandPalette() {
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen]);
+  }, [isOpen, openSettingsModal, toggleApiDebugPanel]);
 
   // Focus input when opened
   useEffect(() => {
@@ -209,6 +224,17 @@ function CommandPalette() {
   }, [selectedIndex]);
 
   const handleSelect = (item) => {
+    // Handle actions (like opening modals)
+    if (item.type === 'action') {
+      if (item.action === 'openSettings') {
+        openSettingsModal();
+      } else if (item.action === 'toggleApiDebug') {
+        toggleApiDebugPanel();
+      }
+      setIsOpen(false);
+      return;
+    }
+
     // Save to recent searches
     const newRecent = [
       { id: item.id, label: item.label, path: item.path },

@@ -225,9 +225,13 @@ class ModAction {
     const result = await query(
       `SELECT ma.*, 
               c.name as channel_name,
-              m.username as moderator_username
+              c.twitch_id as channel_twitch_id,
+              m.username as moderator_username,
+              t.username as target_username,
+              t.display_name as target_display_name
        FROM mod_actions ma
        JOIN channels c ON ma.channel_id = c.id
+       JOIN users t ON ma.target_user_id = t.id
        LEFT JOIN users m ON ma.moderator_id = m.id
        WHERE ma.target_user_id = $1
        ORDER BY ma.timestamp DESC

@@ -54,6 +54,7 @@ export const channelsApi = {
   getByName: (name) => api.get(`/channels/${name}`),
   getStats: (name, params) => api.get(`/channels/${name}/stats`, { params }),
   getTopUsers: (name, params) => api.get(`/channels/${name}/top-users`, { params }),
+  getLinks: (name, params) => api.get(`/channels/${name}/links`, { params }),
   create: (name) => api.post('/channels', { name }),
   update: (name, data) => api.patch(`/channels/${name}`, data),
   delete: (name) => api.delete(`/channels/${name}`),

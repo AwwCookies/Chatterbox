@@ -1,20 +1,32 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMessages, useMessageSearch } from '../hooks/useMessages';
 import MessageList from '../components/chat/MessageList';
 import SearchBar from '../components/common/SearchBar';
 import Pagination from '../components/common/Pagination';
-import { MessageSquare, Filter } from 'lucide-react';
+import { MessageSquare, Filter, RefreshCw } from 'lucide-react';
 import { useSettingsStore } from '../stores/settingsStore';
 
 function Messages() {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [filters, setFilters] = useState({
-    channel: '',
-    user: '',
-    includeDeleted: false,
+    channel: searchParams.get('channel') || '',
+    user: searchParams.get('user') || '',
+    includeDeleted: searchParams.get('includeDeleted') === 'true',
   });
   const [page, setPage] = useState(1);
   const resultsPerPage = useSettingsStore(state => state.resultsPerPage);
+
+  // Sync URL params when filters change
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set('search', searchQuery);
+    if (filters.channel) params.set('channel', filters.channel);
+    if (filters.user) params.set('user', filters.user);
+    if (filters.includeDeleted) params.set('includeDeleted', 'true');
+    setSearchParams(params, { replace: true });
+  }, [searchQuery, filters, setSearchParams]);
 
   const params = {
     ...filters,
@@ -23,9 +35,12 @@ function Messages() {
     search: searchQuery || undefined,
   };
 
-  const { data, isLoading, error } = searchQuery
-    ? useMessageSearch(searchQuery, params)
-    : useMessages(params);
+  const messagesQuery = useMessages(params);
+  const searchQueryResult = useMessageSearch(searchQuery, params);
+  
+  const { data, isLoading, error, refetch, isFetching } = searchQuery
+    ? searchQueryResult
+    : messagesQuery;
 
   const messages = data?.messages || [];
   const total = data?.total || 0;
@@ -98,6 +113,14 @@ function Messages() {
         <p className="text-sm text-gray-400">
           {total > 0 ? `Showing ${messages.length} of ${total} messages` : 'No messages found'}
         </p>
+        <button
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-300 hover:text-white bg-gray-700 hover:bg-gray-600 rounded-md transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
       </div>
 
       {/* Message List */}

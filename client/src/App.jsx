@@ -9,13 +9,15 @@ import Channel from './pages/Channel'
 import Moderation from './pages/Moderation'
 import Live from './pages/Live'
 import Channels from './pages/Channels'
-import Settings from './pages/Settings'
 import ProfileCardContainer from './components/user/ProfileCardContainer'
 import ToastContainer from './components/common/ToastContainer'
 import CommandPalette from './components/common/CommandPalette'
 import ErrorBoundary from './components/common/ErrorBoundary'
+import SettingsModal from './components/common/SettingsModal'
+import ApiDebugPanel from './components/common/ApiDebugPanel'
 import { useEmotes } from './hooks/useEmotes'
 import { useSettingsStore } from './stores/settingsStore'
+import { useUIStore } from './stores/uiStore'
 
 function App() {
   // Initialize global emotes early
@@ -23,6 +25,10 @@ function App() {
   const sidebarCollapsed = useSettingsStore(state => state.sidebarCollapsed);
   const theme = useSettingsStore(state => state.theme);
   const accentColor = useSettingsStore(state => state.accentColor);
+  const settingsModalOpen = useUIStore(state => state.settingsModalOpen);
+  const closeSettingsModal = useUIStore(state => state.closeSettingsModal);
+  const apiDebugPanelOpen = useUIStore(state => state.apiDebugPanelOpen);
+  const closeApiDebugPanel = useUIStore(state => state.closeApiDebugPanel);
   
   useEffect(() => {
     if (isLoaded) {
@@ -96,7 +102,6 @@ function App() {
               <Route path="/moderation" element={<Moderation />} />
               <Route path="/live" element={<Live />} />
               <Route path="/channels" element={<Channels />} />
-              <Route path="/settings" element={<Settings />} />
             </Routes>
           </ErrorBoundary>
         </main>
@@ -106,6 +111,8 @@ function App() {
       <ProfileCardContainer />
       <ToastContainer />
       <CommandPalette />
+      <SettingsModal isOpen={settingsModalOpen} onClose={closeSettingsModal} />
+      <ApiDebugPanel isOpen={apiDebugPanelOpen} onClose={closeApiDebugPanel} />
     </div>
   )
 }

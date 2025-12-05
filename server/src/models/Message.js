@@ -281,6 +281,72 @@ class Message {
     const result = await query(sql, params);
     return result.rows;
   }
+
+  /**
+   * Get messages containing links for a channel
+   */
+  static async getMessagesWithLinks(channelId, options = {}) {
+    const { limit = 50, offset = 0, since, until } = options;
+    
+    // Regex pattern to match URLs
+    const urlPattern = '(https?://[^\\s]+)';
+    
+    let sql = `
+      SELECT m.*, 
+             u.username, 
+             u.display_name as user_display_name,
+             c.name as channel_name,
+             c.twitch_id as channel_twitch_id
+      FROM messages m
+      JOIN users u ON m.user_id = u.id
+      JOIN channels c ON m.channel_id = c.id
+      WHERE m.channel_id = $1 
+        AND m.message_text ~ $2
+        AND m.is_deleted = FALSE
+    `;
+    
+    const params = [channelId, urlPattern];
+    let paramIndex = 3;
+    
+    if (since) {
+      sql += ` AND m.timestamp >= $${paramIndex}`;
+      params.push(since);
+      paramIndex++;
+    }
+    
+    if (until) {
+      sql += ` AND m.timestamp <= $${paramIndex}`;
+      params.push(until);
+      paramIndex++;
+    }
+    
+    sql += ` ORDER BY m.timestamp DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    params.push(limit, offset);
+    
+    const result = await query(sql, params);
+    
+    // Also get total count
+    let countSql = `
+      SELECT COUNT(*) as total
+      FROM messages m
+      WHERE m.channel_id = $1 
+        AND m.message_text ~ $2
+        AND m.is_deleted = FALSE
+    `;
+    const countParams = [channelId, urlPattern];
+    
+    if (since) {
+      countSql += ` AND m.timestamp >= $3`;
+      countParams.push(since);
+    }
+    
+    const countResult = await query(countSql, countParams);
+    
+    return {
+      messages: result.rows,
+      total: parseInt(countResult.rows[0]?.total || 0)
+    };
+  }
 }
 
 export default Message;

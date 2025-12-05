@@ -932,6 +932,62 @@ Get the top chatters in a channel by message count.
 
 ---
 
+#### Get Channel Links
+`GET /api/channels/:name/links`
+
+Get all messages containing links/URLs posted in a channel.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Channel name |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | 50 | Number of messages to return (max 100) |
+| `offset` | integer | 0 | Pagination offset |
+| `since` | ISO 8601 date | - | Only include messages after this date |
+| `until` | ISO 8601 date | - | Only include messages before this date |
+
+**Response:**
+```json
+{
+  "messages": [
+    {
+      "id": 1,
+      "message_id": "abc-123-def",
+      "channel_id": 1,
+      "user_id": 42,
+      "message_text": "Check out this video https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "timestamp": "2024-01-15T14:30:00.000Z",
+      "is_deleted": false,
+      "badges": [],
+      "emotes": [],
+      "username": "chatuser123",
+      "user_display_name": "ChatUser123",
+      "channel_name": "streamer",
+      "channel_twitch_id": "123456789"
+    }
+  ],
+  "total": 150,
+  "channel": {
+    "id": 1,
+    "name": "streamer",
+    "display_name": "Streamer",
+    "twitch_id": "123456789",
+    "is_active": true
+  }
+}
+```
+
+**Errors:**
+- `404`: Channel not found
+
+---
+
 ### Utilities
 
 #### Link Preview
@@ -1457,6 +1513,7 @@ rate_limit: 100 requests/minute
 | GET | `/channels/:name` | Get channel info | - |
 | GET | `/channels/:name/stats` | Get channel stats | `since`, `until` |
 | GET | `/channels/:name/top-users` | Get top chatters | `limit`, `since`, `until` |
+| GET | `/channels/:name/links` | Get messages with links | `limit`, `offset`, `since`, `until` |
 | POST | `/channels` | Add channel | Body: `{ "name": "..." }` |
 | PATCH | `/channels/:name` | Update channel | Body: `{ "is_active": bool }` |
 | DELETE | `/channels/:name` | Remove channel | - |

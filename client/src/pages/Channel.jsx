@@ -1,13 +1,16 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useChannel, useChannelStats, useChannelMessages, useChannelModActions, useChannelTopUsers } from '../hooks/useChannels';
+import { useChannel, useChannelStats, useChannelMessages, useChannelModActions, useChannelTopUsers, useChannelLinks } from '../hooks/useChannels';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useEmotes } from '../hooks/useEmotes';
 import { useProfileCardStore } from '../stores/profileCardStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { formatDateTime, formatNumber, formatRelative } from '../utils/formatters';
 import LoadingSpinner from '../components/common/LoadingSpinner';
+import Pagination from '../components/common/Pagination';
 import LiveFeed from '../components/chat/LiveFeed';
 import LinkPanel from '../components/chat/LinkPanel';
+import LinkPreview from '../components/chat/LinkPreview';
 import MessageList from '../components/chat/MessageList';
 import ModActionList from '../components/moderation/ModActionList';
 import { 
@@ -24,7 +27,8 @@ import {
   ExternalLink,
   Activity,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Link as LinkIcon
 } from 'lucide-react';
 
 function Channel() {
@@ -32,7 +36,9 @@ function Channel() {
   const [activeTab, setActiveTab] = useState('live');
   const [linkPanelCollapsed, setLinkPanelCollapsed] = useState(false);
   const [modPanelCollapsed, setModPanelCollapsed] = useState(false);
+  const [linksPage, setLinksPage] = useState(1);
   const openProfileCard = useProfileCardStore(state => state.openCard);
+  const resultsPerPage = useSettingsStore(state => state.resultsPerPage);
   
   // Fetch channel data
   const { data: channel, isLoading: channelLoading, error: channelError } = useChannel(name);
@@ -40,6 +46,10 @@ function Channel() {
   const { data: messagesData, isLoading: messagesLoading } = useChannelMessages(name, { limit: 50 });
   const { data: modActionsData, isLoading: modActionsLoading } = useChannelModActions(name, { limit: 50 });
   const { data: topUsersData, isLoading: topUsersLoading } = useChannelTopUsers(name, { limit: 10 });
+  const { data: linksData, isLoading: linksLoading } = useChannelLinks(name, { 
+    limit: resultsPerPage, 
+    offset: (linksPage - 1) * resultsPerPage 
+  });
 
   // Live feed
   const { 
@@ -207,6 +217,7 @@ function Channel() {
           {[
             { id: 'live', label: 'Live Feed', icon: Radio },
             { id: 'messages', label: 'Message History', icon: MessageSquare },
+            { id: 'links', label: 'Links', icon: LinkIcon, count: linksData?.total },
             { id: 'moderation', label: 'Mod Actions', icon: Shield },
             { id: 'users', label: 'Top Users', icon: TrendingUp },
           ].map(tab => (
@@ -221,6 +232,11 @@ function Channel() {
             >
               <tab.icon className="w-4 h-4" />
               <span>{tab.label}</span>
+              {tab.count !== undefined && (
+                <span className="text-xs bg-gray-700 px-1.5 py-0.5 rounded-full">
+                  {formatNumber(tab.count)}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -291,11 +307,67 @@ function Channel() {
               </div>
               <div className="max-h-[550px] overflow-y-auto p-4">
                 <ModActionList 
-                  actions={modActionsData?.modActions || []}
+                  actions={modActionsData?.actions || []}
                   isLoading={modActionsLoading}
                   emptyMessage="No mod actions recorded"
                 />
               </div>
+            </div>
+          )}
+
+          {activeTab === 'links' && (
+            <div className="bg-twitch-gray rounded-lg border border-gray-700">
+              <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-white flex items-center">
+                  <LinkIcon className="w-5 h-5 mr-2 text-blue-400" />
+                  All Links
+                </h2>
+                <span className="text-sm text-gray-400">
+                  {formatNumber(linksData?.total || 0)} total links
+                </span>
+              </div>
+              <div className="max-h-[550px] overflow-y-auto">
+                {linksLoading ? (
+                  <div className="flex justify-center py-8">
+                    <LoadingSpinner />
+                  </div>
+                ) : linksData?.messages?.length > 0 ? (
+                  <div className="divide-y divide-gray-700">
+                    {linksData.messages.map((message) => (
+                      <div key={message.id} className="p-4 hover:bg-gray-800/50">
+                        <div className="flex items-center space-x-2 mb-2">
+                          <button
+                            onClick={() => openProfileCard(message.username)}
+                            className="font-medium text-twitch-purple hover:underline"
+                          >
+                            {message.user_display_name || message.username}
+                          </button>
+                          <span className="text-xs text-gray-500">
+                            {formatRelative(message.timestamp)}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-300 mb-2 break-words">
+                          {message.message_text}
+                        </p>
+                        <LinkPreview text={message.message_text} />
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-gray-400">
+                    No links found in this channel
+                  </div>
+                )}
+              </div>
+              {linksData?.total > resultsPerPage && (
+                <div className="p-4 border-t border-gray-700 flex justify-center">
+                  <Pagination
+                    currentPage={linksPage}
+                    totalPages={Math.ceil(linksData.total / resultsPerPage)}
+                    onPageChange={setLinksPage}
+                  />
+                </div>
+              )}
             </div>
           )}
 

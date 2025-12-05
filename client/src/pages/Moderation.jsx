@@ -1,21 +1,33 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useModActions, useModActionStats } from '../hooks/useModActions';
 import ModActionList from '../components/moderation/ModActionList';
 import Pagination from '../components/common/Pagination';
-import { Shield, Filter, BarChart3 } from 'lucide-react';
+import { Shield, Filter, BarChart3, RefreshCw } from 'lucide-react';
 import { formatNumber, capitalize } from '../utils/formatters';
 import { ACTION_TYPES } from '../utils/constants';
 import { useSettingsStore } from '../stores/settingsStore';
 
 function Moderation() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState({
-    type: '',
-    channel: '',
-    moderator: '',
-    target: '',
+    type: searchParams.get('type') || '',
+    channel: searchParams.get('channel') || '',
+    moderator: searchParams.get('moderator') || '',
+    target: searchParams.get('target') || '',
   });
   const [page, setPage] = useState(1);
   const resultsPerPage = useSettingsStore(state => state.resultsPerPage);
+
+  // Sync URL params when filters change
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (filters.type) params.set('type', filters.type);
+    if (filters.channel) params.set('channel', filters.channel);
+    if (filters.moderator) params.set('moderator', filters.moderator);
+    if (filters.target) params.set('target', filters.target);
+    setSearchParams(params, { replace: true });
+  }, [filters, setSearchParams]);
 
   const params = {
     ...filters,
@@ -23,8 +35,8 @@ function Moderation() {
     offset: (page - 1) * resultsPerPage,
   };
 
-  const { data, isLoading, error } = useModActions(params);
-  const { data: stats, isLoading: statsLoading } = useModActionStats({ channel: filters.channel });
+  const { data, isLoading, error, refetch, isFetching } = useModActions(params);
+  const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useModActionStats({ channel: filters.channel });
 
   const actions = data?.actions || [];
   const total = data?.total || 0;
@@ -131,6 +143,14 @@ function Moderation() {
         <p className="text-sm text-gray-400">
           {total > 0 ? `Showing ${actions.length} of ${total} actions` : 'No actions found'}
         </p>
+        <button
+          onClick={() => { refetch(); refetchStats(); }}
+          disabled={isFetching}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-300 hover:text-white bg-gray-700 hover:bg-gray-600 rounded-md transition-colors disabled:opacity-50"
+        >
+          <RefreshCw className={`w-4 h-4 ${isFetching ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
       </div>
 
       {/* Action List */}

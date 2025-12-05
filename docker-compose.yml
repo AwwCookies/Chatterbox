@@ -46,6 +46,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./server/logs:/app/logs
+      - ./api.md:/app/api.md:ro
 
   client:
     build:

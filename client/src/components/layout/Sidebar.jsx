@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { channelsApi } from '../../services/api';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useUIStore } from '../../stores/uiStore';
 import { 
   Home, 
   MessageSquare, 
@@ -13,7 +14,8 @@ import {
   ChevronLeft,
   Settings,
   PanelLeftClose,
-  PanelLeft
+  PanelLeft,
+  Bug
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -29,6 +31,9 @@ function Sidebar() {
   const [channelsExpanded, setChannelsExpanded] = useState(true);
   const sidebarCollapsed = useSettingsStore(state => state.sidebarCollapsed);
   const toggleSidebar = useSettingsStore(state => state.toggleSetting);
+  const openSettingsModal = useUIStore(state => state.openSettingsModal);
+  const toggleApiDebugPanel = useUIStore(state => state.toggleApiDebugPanel);
+  const apiDebugPanelOpen = useUIStore(state => state.apiDebugPanelOpen);
   
   const { data: channelsData } = useQuery({
     queryKey: ['channels', { active: true }],
@@ -141,22 +146,29 @@ function Sidebar() {
           </div>
         )}
 
-        {/* Settings Link */}
+        {/* Settings & Debug */}
         <div className={`mt-auto pt-4 border-t border-gray-700 ${sidebarCollapsed ? 'mt-6' : 'mt-8'}`}>
-          <NavLink
-            to="/settings"
+          <button
+            onClick={openSettingsModal}
             title={sidebarCollapsed ? 'Settings' : undefined}
-            className={({ isActive }) =>
-              `flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} px-3 py-2 rounded-md transition-colors ${
-                isActive
-                  ? 'bg-twitch-purple text-white'
-                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-              }`
-            }
+            className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} px-3 py-2 rounded-md transition-colors text-gray-300 hover:bg-gray-700 hover:text-white`}
           >
             <Settings className="w-5 h-5 flex-shrink-0" />
             {!sidebarCollapsed && <span>Settings</span>}
-          </NavLink>
+          </button>
+          
+          <button
+            onClick={toggleApiDebugPanel}
+            title={sidebarCollapsed ? 'API Debug' : undefined}
+            className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} px-3 py-2 rounded-md transition-colors ${
+              apiDebugPanelOpen
+                ? 'bg-yellow-500/20 text-yellow-400'
+                : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+            }`}
+          >
+            <Bug className="w-5 h-5 flex-shrink-0" />
+            {!sidebarCollapsed && <span>API Debug</span>}
+          </button>
         </div>
       </nav>
     </aside>
