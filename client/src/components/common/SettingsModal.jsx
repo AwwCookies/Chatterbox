@@ -14,7 +14,8 @@ import {
   Moon,
   Sun,
   Monitor,
-  X
+  X,
+  Key
 } from 'lucide-react';
 
 const sections = [
@@ -24,6 +25,7 @@ const sections = [
   { id: 'liveFeed', label: 'Live Feed', icon: Radio },
   { id: 'sidebar', label: 'Sidebar', icon: LayoutDashboard },
   { id: 'data', label: 'Data & Storage', icon: Database },
+  { id: 'security', label: 'Security', icon: Key },
 ];
 
 function ToggleSwitch({ checked, onChange, disabled }) {
@@ -442,6 +444,40 @@ function SettingsModal({ isOpen, onClose }) {
                   >
                     <p className="text-white">Clear Search History</p>
                     <p className="text-xs text-gray-400">Remove recent searches</p>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeSection === 'security' && (
+              <div>
+                <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                  <p className="text-sm text-yellow-400">
+                    🔐 The API key is required for sensitive operations like adding/removing channels. Keep it secret!
+                  </p>
+                </div>
+
+                <SettingRow label="API Key" description="Authentication key for channel management">
+                  <input
+                    type="password"
+                    value={settings.apiKey}
+                    onChange={(e) => settings.setSetting('apiKey', e.target.value)}
+                    placeholder="Enter your API key"
+                    className="w-64 bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-twitch-purple"
+                  />
+                </SettingRow>
+
+                <div className="mt-6 pt-4 border-t border-gray-700">
+                  <h4 className="text-sm font-medium text-white mb-3">Security Actions</h4>
+                  <button
+                    onClick={() => {
+                      settings.setSetting('apiKey', '');
+                      toast.success('API key cleared');
+                    }}
+                    className="w-full text-left px-3 py-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors text-sm"
+                  >
+                    <p className="text-white">Clear API Key</p>
+                    <p className="text-xs text-gray-400">Remove stored API key from this browser</p>
                   </button>
                 </div>
               </div>

@@ -1,18 +1,24 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useChannel, useChannelStats, useChannelMessages, useChannelModActions, useChannelTopUsers, useChannelLinks } from '../hooks/useChannels';
+import { useChannel, useChannelStats, useChannelTopUsers } from '../hooks/useChannels';
+import { useInfiniteChannelMessages, useInfiniteChannelModActions, useInfiniteChannelLinks } from '../hooks/useInfiniteData';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useEmotes } from '../hooks/useEmotes';
 import { useProfileCardStore } from '../stores/profileCardStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useChannelSettingsStore } from '../stores/channelSettingsStore';
+import { useMobile } from '../hooks/useMobile';
+import { MobileChannel } from './mobile';
 import { formatDateTime, formatNumber, formatRelative } from '../utils/formatters';
 import LoadingSpinner from '../components/common/LoadingSpinner';
-import Pagination from '../components/common/Pagination';
+import InfiniteScroll, { InfiniteScrollLoader, InfiniteScrollEmpty } from '../components/common/InfiniteScroll';
 import LiveFeed from '../components/chat/LiveFeed';
 import LinkPanel from '../components/chat/LinkPanel';
 import LinkPreview from '../components/chat/LinkPreview';
+import LinksTab from '../components/chat/LinksTab';
 import MessageList from '../components/chat/MessageList';
 import ModActionList from '../components/moderation/ModActionList';
+import ChannelSettingsTab from '../components/channel/ChannelSettingsTab';
 import { 
   Radio, 
   Hash, 
@@ -28,28 +34,73 @@ import {
   Activity,
   ChevronLeft,
   ChevronRight,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Settings
 } from 'lucide-react';
 
 function Channel() {
   const { name } = useParams();
-  const [activeTab, setActiveTab] = useState('live');
-  const [linkPanelCollapsed, setLinkPanelCollapsed] = useState(false);
-  const [modPanelCollapsed, setModPanelCollapsed] = useState(false);
-  const [linksPage, setLinksPage] = useState(1);
+  const { isMobile } = useMobile();
   const openProfileCard = useProfileCardStore(state => state.openCard);
   const resultsPerPage = useSettingsStore(state => state.resultsPerPage);
+  const { getChannelSettings } = useChannelSettingsStore();
+  
+  // Get channel-specific settings
+  const channelSettings = getChannelSettings(name);
+  
+  const [activeTab, setActiveTab] = useState(channelSettings.defaultTab || 'live');
+  const [linkPanelCollapsed, setLinkPanelCollapsed] = useState(channelSettings.linkPanelCollapsed);
+  const [modPanelCollapsed, setModPanelCollapsed] = useState(channelSettings.modPanelCollapsed);
+
+  // Mobile view
+  if (isMobile) {
+    return <MobileChannel />;
+  }
   
   // Fetch channel data
   const { data: channel, isLoading: channelLoading, error: channelError } = useChannel(name);
   const { data: statsData, isLoading: statsLoading } = useChannelStats(name);
-  const { data: messagesData, isLoading: messagesLoading } = useChannelMessages(name, { limit: 50 });
-  const { data: modActionsData, isLoading: modActionsLoading } = useChannelModActions(name, { limit: 50 });
   const { data: topUsersData, isLoading: topUsersLoading } = useChannelTopUsers(name, { limit: 10 });
-  const { data: linksData, isLoading: linksLoading } = useChannelLinks(name, { 
-    limit: resultsPerPage, 
-    offset: (linksPage - 1) * resultsPerPage 
-  });
+
+  // Infinite scroll data
+  const {
+    data: messagesData,
+    isLoading: messagesLoading,
+    hasNextPage: hasMoreMessages,
+    fetchNextPage: fetchMoreMessages,
+    isFetchingNextPage: isFetchingMoreMessages,
+  } = useInfiniteChannelMessages(name, { limit: 50 });
+
+  const {
+    data: modActionsData,
+    isLoading: modActionsLoading,
+    hasNextPage: hasMoreModActions,
+    fetchNextPage: fetchMoreModActions,
+    isFetchingNextPage: isFetchingMoreModActions,
+  } = useInfiniteChannelModActions(name, { limit: 50 });
+
+  const {
+    data: linksData,
+    isLoading: linksLoading,
+    hasNextPage: hasMoreLinks,
+    fetchNextPage: fetchMoreLinks,
+    isFetchingNextPage: isFetchingMoreLinks,
+  } = useInfiniteChannelLinks(name, { limit: resultsPerPage });
+
+  // Flatten paginated data
+  const allMessages = useMemo(() => 
+    messagesData?.pages?.flatMap(page => page.messages || []) || [], 
+    [messagesData]
+  );
+  const allModActions = useMemo(() => 
+    modActionsData?.pages?.flatMap(page => page.actions || []) || [], 
+    [modActionsData]
+  );
+  const allLinkMessages = useMemo(() => 
+    linksData?.pages?.flatMap(page => page.messages || []) || [], 
+    [linksData]
+  );
+  const totalLinks = linksData?.pages?.[0]?.total || 0;
 
   // Live feed
   const { 
@@ -217,9 +268,10 @@ function Channel() {
           {[
             { id: 'live', label: 'Live Feed', icon: Radio },
             { id: 'messages', label: 'Message History', icon: MessageSquare },
-            { id: 'links', label: 'Links', icon: LinkIcon, count: linksData?.total },
+            { id: 'links', label: 'Links', icon: LinkIcon, count: totalLinks },
             { id: 'moderation', label: 'Mod Actions', icon: Shield },
             { id: 'users', label: 'Top Users', icon: TrendingUp },
+            { id: 'settings', label: 'Settings', icon: Settings },
           ].map(tab => (
             <button
               key={tab.id}
@@ -281,12 +333,29 @@ function Channel() {
                 </Link>
               </div>
               <div className="max-h-[550px] overflow-y-auto">
-                <MessageList 
-                  messages={messagesData?.messages || []}
-                  isLoading={messagesLoading}
-                  emptyMessage="No messages archived yet"
-                  showChannel={false}
-                />
+                {messagesLoading ? (
+                  <InfiniteScrollLoader />
+                ) : allMessages.length > 0 ? (
+                  <InfiniteScroll
+                    hasNextPage={hasMoreMessages}
+                    isFetchingNextPage={isFetchingMoreMessages}
+                    fetchNextPage={fetchMoreMessages}
+                    isLoading={messagesLoading}
+                    endMessage="No more messages"
+                  >
+                    <MessageList 
+                      messages={allMessages}
+                      isLoading={false}
+                      emptyMessage="No messages archived yet"
+                      showChannel={false}
+                    />
+                  </InfiniteScroll>
+                ) : (
+                  <InfiniteScrollEmpty 
+                    icon={MessageSquare}
+                    message="No messages archived yet"
+                  />
+                )}
               </div>
             </div>
           )}
@@ -306,68 +375,48 @@ function Channel() {
                 </Link>
               </div>
               <div className="max-h-[550px] overflow-y-auto p-4">
-                <ModActionList 
-                  actions={modActionsData?.actions || []}
-                  isLoading={modActionsLoading}
-                  emptyMessage="No mod actions recorded"
-                />
+                {modActionsLoading ? (
+                  <InfiniteScrollLoader />
+                ) : allModActions.length > 0 ? (
+                  <InfiniteScroll
+                    hasNextPage={hasMoreModActions}
+                    isFetchingNextPage={isFetchingMoreModActions}
+                    fetchNextPage={fetchMoreModActions}
+                    isLoading={modActionsLoading}
+                    endMessage="No more mod actions"
+                  >
+                    <ModActionList 
+                      actions={allModActions}
+                      isLoading={false}
+                      emptyMessage="No mod actions recorded"
+                    />
+                  </InfiniteScroll>
+                ) : (
+                  <InfiniteScrollEmpty 
+                    icon={Shield}
+                    message="No mod actions recorded"
+                  />
+                )}
               </div>
             </div>
           )}
 
           {activeTab === 'links' && (
-            <div className="bg-twitch-gray rounded-lg border border-gray-700">
-              <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-white flex items-center">
-                  <LinkIcon className="w-5 h-5 mr-2 text-blue-400" />
-                  All Links
-                </h2>
-                <span className="text-sm text-gray-400">
-                  {formatNumber(linksData?.total || 0)} total links
-                </span>
-              </div>
-              <div className="max-h-[550px] overflow-y-auto">
-                {linksLoading ? (
-                  <div className="flex justify-center py-8">
-                    <LoadingSpinner />
-                  </div>
-                ) : linksData?.messages?.length > 0 ? (
-                  <div className="divide-y divide-gray-700">
-                    {linksData.messages.map((message) => (
-                      <div key={message.id} className="p-4 hover:bg-gray-800/50">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <button
-                            onClick={() => openProfileCard(message.username)}
-                            className="font-medium text-twitch-purple hover:underline"
-                          >
-                            {message.user_display_name || message.username}
-                          </button>
-                          <span className="text-xs text-gray-500">
-                            {formatRelative(message.timestamp)}
-                          </span>
-                        </div>
-                        <p className="text-sm text-gray-300 mb-2 break-words">
-                          {message.message_text}
-                        </p>
-                        <LinkPreview text={message.message_text} />
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-gray-400">
-                    No links found in this channel
-                  </div>
-                )}
-              </div>
-              {linksData?.total > resultsPerPage && (
-                <div className="p-4 border-t border-gray-700 flex justify-center">
-                  <Pagination
-                    currentPage={linksPage}
-                    totalPages={Math.ceil(linksData.total / resultsPerPage)}
-                    onPageChange={setLinksPage}
-                  />
-                </div>
-              )}
+            <div className="bg-twitch-gray rounded-lg border border-gray-700 p-4">
+              <InfiniteScroll
+                hasNextPage={hasMoreLinks}
+                isFetchingNextPage={isFetchingMoreLinks}
+                fetchNextPage={fetchMoreLinks}
+                isLoading={linksLoading}
+                endMessage="No more links"
+              >
+                <LinksTab 
+                  messages={allLinkMessages}
+                  isLoading={linksLoading}
+                  totalCount={totalLinks}
+                  channelName={name}
+                />
+              </InfiniteScroll>
             </div>
           )}
 
@@ -493,6 +542,13 @@ function Channel() {
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* Settings Tab */}
+        {activeTab === 'settings' && (
+          <div className="lg:col-span-3">
+            <ChannelSettingsTab channelName={name} />
           </div>
         )}
       </div>

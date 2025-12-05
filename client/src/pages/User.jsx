@@ -1,16 +1,79 @@
+import { useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { useUser, useUserMessages, useUserModActions } from '../hooks/useUsers';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { usersApi } from '../services/api';
+import { useUser } from '../hooks/useUsers';
 import { formatDateTime, formatNumber, formatRelative } from '../utils/formatters';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import MessageList from '../components/chat/MessageList';
 import ModActionList from '../components/moderation/ModActionList';
+import InfiniteScroll from '../components/common/InfiniteScroll';
 import { User as UserIcon, MessageSquare, Shield, Calendar, Hash, AlertTriangle } from 'lucide-react';
+import { MobileUser } from './mobile';
 
-function User() {
+function User({ isMobile }) {
+  // Render mobile version if on mobile
+  if (isMobile) {
+    return <MobileUser />;
+  }
+
   const { username } = useParams();
   const { data: user, isLoading, error } = useUser(username);
-  const { data: messagesData, isLoading: messagesLoading } = useUserMessages(username, { limit: 20 });
-  const { data: modActionsData, isLoading: modActionsLoading } = useUserModActions(username, { limit: 20 });
+  
+  // Infinite query for messages
+  const {
+    data: messagesData,
+    isLoading: messagesLoading,
+    fetchNextPage: fetchNextMessages,
+    hasNextPage: hasNextMessages,
+    isFetchingNextPage: isFetchingNextMessages,
+  } = useInfiniteQuery({
+    queryKey: ['user', username, 'messages', 'infinite'],
+    queryFn: async ({ pageParam = 0 }) => {
+      const response = await usersApi.getMessages(username, { limit: 20, offset: pageParam });
+      return { ...response.data, _offset: pageParam, _limit: 20 };
+    },
+    getNextPageParam: (lastPage) => {
+      if (lastPage.hasMore) {
+        return lastPage._offset + lastPage._limit;
+      }
+      return undefined;
+    },
+    initialPageParam: 0,
+    enabled: !!username,
+  });
+
+  // Infinite query for mod actions
+  const {
+    data: modActionsData,
+    isLoading: modActionsLoading,
+    fetchNextPage: fetchNextModActions,
+    hasNextPage: hasNextModActions,
+    isFetchingNextPage: isFetchingNextModActions,
+  } = useInfiniteQuery({
+    queryKey: ['user', username, 'mod-actions', 'infinite'],
+    queryFn: async ({ pageParam = 0 }) => {
+      const response = await usersApi.getModActions(username, { limit: 20, offset: pageParam });
+      return { ...response.data, _offset: pageParam, _limit: 20 };
+    },
+    getNextPageParam: (lastPage) => {
+      if (lastPage.hasMore) {
+        return lastPage._offset + lastPage._limit;
+      }
+      return undefined;
+    },
+    initialPageParam: 0,
+    enabled: !!username,
+  });
+
+  // Flatten messages and mod actions
+  const messages = useMemo(() => {
+    return messagesData?.pages?.flatMap(page => page.messages || []) || [];
+  }, [messagesData]);
+
+  const modActions = useMemo(() => {
+    return modActionsData?.pages?.flatMap(page => page.actions || []) || [];
+  }, [modActionsData]);
 
   if (isLoading) {
     return (
@@ -129,6 +192,11 @@ function User() {
             <h2 className="text-lg font-semibold text-white flex items-center">
               <MessageSquare className="w-5 h-5 mr-2 text-twitch-purple" />
               Recent Messages
+              {messagesData?.pages?.[0]?.total > 0 && (
+                <span className="text-sm text-gray-400 font-normal ml-2">
+                  ({formatNumber(messagesData.pages[0].total)})
+                </span>
+              )}
             </h2>
             <Link 
               to={`/messages?user=${username}`}
@@ -138,11 +206,19 @@ function User() {
             </Link>
           </div>
           <div className="max-h-96 overflow-y-auto">
-            <MessageList 
-              messages={messagesData?.messages || []}
-              isLoading={messagesLoading}
-              emptyMessage="No messages found"
-            />
+            <InfiniteScroll
+              hasNextPage={hasNextMessages}
+              fetchNextPage={fetchNextMessages}
+              isFetchingNextPage={isFetchingNextMessages}
+              loadingText="Loading messages..."
+              className="p-0"
+            >
+              <MessageList 
+                messages={messages}
+                isLoading={messagesLoading}
+                emptyMessage="No messages found"
+              />
+            </InfiniteScroll>
           </div>
         </div>
 
@@ -151,14 +227,27 @@ function User() {
             <h2 className="text-lg font-semibold text-white flex items-center">
               <Shield className="w-5 h-5 mr-2 text-red-400" />
               Mod Actions
+              {modActionsData?.pages?.[0]?.total > 0 && (
+                <span className="text-sm text-gray-400 font-normal ml-2">
+                  ({formatNumber(modActionsData.pages[0].total)})
+                </span>
+              )}
             </h2>
           </div>
           <div className="max-h-96 overflow-y-auto">
-            <ModActionList 
-              actions={modActionsData?.actions || []}
-              isLoading={modActionsLoading}
-              emptyMessage="No mod actions found"
-            />
+            <InfiniteScroll
+              hasNextPage={hasNextModActions}
+              fetchNextPage={fetchNextModActions}
+              isFetchingNextPage={isFetchingNextModActions}
+              loadingText="Loading mod actions..."
+              className="p-0"
+            >
+              <ModActionList 
+                actions={modActions}
+                isLoading={modActionsLoading}
+                emptyMessage="No mod actions found"
+              />
+            </InfiniteScroll>
           </div>
         </div>
       </div>

@@ -12,7 +12,16 @@ import {
   CheckCircle
 } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+// Dynamically determine API URL based on current location
+const getApiBase = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  const { protocol, hostname } = window.location;
+  return `${protocol}//${hostname}:3000`;
+};
+
+const API_BASE = getApiBase();
 
 const apiEndpoints = [
   {
@@ -28,8 +37,8 @@ const apiEndpoints = [
     endpoints: [
       { method: 'GET', path: '/users', description: 'List users', params: ['limit', 'offset', 'search'] },
       { method: 'GET', path: '/users/:username', description: 'Get user profile', params: ['username'] },
-      { method: 'GET', path: '/users/:username/messages', description: 'User messages', params: ['username', 'limit', 'channel'] },
-      { method: 'GET', path: '/users/:username/mod-actions', description: 'User mod history', params: ['username', 'limit'] },
+      { method: 'GET', path: '/users/:username/messages', description: 'User messages', params: ['username', 'limit', 'offset', 'channel', 'since', 'until'] },
+      { method: 'GET', path: '/users/:username/mod-actions', description: 'User mod history', params: ['username', 'limit', 'offset'] },
       { method: 'GET', path: '/users/:username/stats', description: 'User statistics', params: ['username'] },
     ]
   },
@@ -69,15 +78,26 @@ const apiEndpoints = [
   },
 ];
 
+import { useSettingsStore } from '../../stores/settingsStore';
+
 function ApiDebugPanel({ isOpen, onClose }) {
+  const storedApiKey = useSettingsStore(state => state.apiKey);
   const [expandedCategories, setExpandedCategories] = useState(['System']);
   const [selectedEndpoint, setSelectedEndpoint] = useState(null);
   const [params, setParams] = useState({});
   const [body, setBody] = useState('');
+  const [apiKey, setApiKey] = useState('');
   const [response, setResponse] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
+
+  // Initialize API key from settings
+  useEffect(() => {
+    if (storedApiKey && !apiKey) {
+      setApiKey(storedApiKey);
+    }
+  }, [storedApiKey]);
 
   useEffect(() => {
     if (selectedEndpoint) {
@@ -128,11 +148,18 @@ function ApiDebugPanel({ isOpen, onClose }) {
     setResponse(null);
 
     const url = buildUrl();
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    
+    // Add API key if provided (needed for POST/PATCH/DELETE)
+    if (apiKey) {
+      headers['X-API-Key'] = apiKey;
+    }
+
     const options = {
       method: selectedEndpoint.method,
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers,
     };
 
     if (['POST', 'PATCH', 'PUT'].includes(selectedEndpoint.method) && body) {
@@ -243,6 +270,20 @@ function ApiDebugPanel({ isOpen, onClose }) {
             <div className="text-xs font-mono text-gray-400 bg-gray-800 p-2 rounded truncate">
               {selectedEndpoint.method} {selectedEndpoint.path}
             </div>
+
+            {/* API Key (for authenticated endpoints) */}
+            {['POST', 'PATCH', 'PUT', 'DELETE'].includes(selectedEndpoint.method) && (
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-yellow-400">🔑 API Key (required)</label>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="Enter API key for authentication"
+                  className="w-full bg-gray-800 border border-yellow-600/50 rounded px-2 py-1 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-yellow-500"
+                />
+              </div>
+            )}
 
             {/* Parameters */}
             {selectedEndpoint.params.length > 0 && (

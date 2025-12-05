@@ -1,6 +1,17 @@
 import { io } from 'socket.io-client';
 
-const WS_URL = import.meta.env.VITE_WS_URL || window.location.origin;
+// Dynamically determine WebSocket URL based on current location
+const getWsUrl = () => {
+  if (import.meta.env.VITE_WS_URL) {
+    return import.meta.env.VITE_WS_URL;
+  }
+  // In production, WS is on port 3000 of the same host
+  const { hostname } = window.location;
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${wsProtocol}//${hostname}:3000`;
+};
+
+const WS_URL = getWsUrl();
 
 class WebSocketService {
   constructor() {

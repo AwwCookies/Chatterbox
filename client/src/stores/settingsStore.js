@@ -36,6 +36,9 @@ const defaultSettings = {
   // Data
   defaultTimeRange: '24h', // '1h' | '24h' | '7d' | '30d' | 'all'
   resultsPerPage: 50,
+  
+  // Security
+  apiKey: '', // API key for authenticated requests
 };
 
 export const useSettingsStore = create(
@@ -62,6 +65,7 @@ export const useSettingsStore = create(
           liveFeed: ['autoScroll', 'maxLiveMessages', 'pauseOnHover', 'highlightMentions'],
           sidebar: ['sidebarCollapsed', 'showChannelPreviews'],
           data: ['defaultTimeRange', 'resultsPerPage'],
+          security: ['apiKey'],
         };
         
         (categoryKeys[category] || []).forEach(key => {

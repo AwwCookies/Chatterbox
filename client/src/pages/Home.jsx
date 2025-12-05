@@ -24,6 +24,7 @@ import {
 import { formatNumber, formatRelative } from '../utils/formatters';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import ModActionList from '../components/moderation/ModActionList';
+import { MobileHome } from './mobile';
 
 function StatCard({ icon: Icon, label, value, subValue, color = 'text-twitch-purple', trend }) {
   return (
@@ -59,7 +60,12 @@ function ActivityIndicator({ isActive, label }) {
   );
 }
 
-function Home() {
+function Home({ isMobile }) {
+  // Render mobile version if on mobile
+  if (isMobile) {
+    return <MobileHome />;
+  }
+
   const [isConnected, setIsConnected] = useState(false);
   
   const { data: stats, isLoading: statsLoading } = useQuery({

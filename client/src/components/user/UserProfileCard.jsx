@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { usersApi } from '../../services/api';
 import { formatNumber, formatRelative, formatTime } from '../../utils/formatters';
 import LoadingSpinner from '../common/LoadingSpinner';
@@ -21,7 +21,8 @@ import {
   Pin,
   PinOff,
   GripHorizontal,
-  RefreshCw
+  RefreshCw,
+  ChevronDown
 } from 'lucide-react';
 
 function UserProfileCard({ 
@@ -51,19 +52,64 @@ function UserProfileCard({
     refetchInterval: isPinned ? 30000 : false, // Auto-refresh every 30s if pinned
   });
 
-  const { data: messagesData, isLoading: messagesLoading, refetch: refetchMessages } = useQuery({
-    queryKey: ['user', username, 'messages', { limit: 15 }],
-    queryFn: () => usersApi.getMessages(username, { limit: 15 }).then(res => res.data),
+  // Infinite query for messages
+  const {
+    data: messagesData,
+    isLoading: messagesLoading,
+    fetchNextPage: fetchNextMessages,
+    hasNextPage: hasNextMessages,
+    isFetchingNextPage: isFetchingNextMessages,
+    refetch: refetchMessages,
+  } = useInfiniteQuery({
+    queryKey: ['user', username, 'messages', 'infinite', 'card'],
+    queryFn: async ({ pageParam = 0 }) => {
+      const response = await usersApi.getMessages(username, { limit: 15, offset: pageParam });
+      return { ...response.data, _offset: pageParam, _limit: 15 };
+    },
+    getNextPageParam: (lastPage) => {
+      if (lastPage.hasMore) {
+        return lastPage._offset + lastPage._limit;
+      }
+      return undefined;
+    },
+    initialPageParam: 0,
     enabled: !!username,
     refetchInterval: isPinned ? 10000 : false, // Auto-refresh every 10s if pinned
   });
 
-  const { data: modActionsData, isLoading: modActionsLoading, refetch: refetchModActions } = useQuery({
-    queryKey: ['user', username, 'mod-actions', { limit: 15 }],
-    queryFn: () => usersApi.getModActions(username, { limit: 15 }).then(res => res.data),
+  // Infinite query for mod actions
+  const {
+    data: modActionsData,
+    isLoading: modActionsLoading,
+    fetchNextPage: fetchNextModActions,
+    hasNextPage: hasNextModActions,
+    isFetchingNextPage: isFetchingNextModActions,
+    refetch: refetchModActions,
+  } = useInfiniteQuery({
+    queryKey: ['user', username, 'mod-actions', 'infinite', 'card'],
+    queryFn: async ({ pageParam = 0 }) => {
+      const response = await usersApi.getModActions(username, { limit: 15, offset: pageParam });
+      return { ...response.data, _offset: pageParam, _limit: 15 };
+    },
+    getNextPageParam: (lastPage) => {
+      if (lastPage.hasMore) {
+        return lastPage._offset + lastPage._limit;
+      }
+      return undefined;
+    },
+    initialPageParam: 0,
     enabled: !!username,
     refetchInterval: isPinned ? 10000 : false,
   });
+
+  // Flatten messages and mod actions
+  const messages = useMemo(() => {
+    return messagesData?.pages?.flatMap(page => page.messages || []) || [];
+  }, [messagesData]);
+
+  const modActions = useMemo(() => {
+    return modActionsData?.pages?.flatMap(page => page.actions || []) || [];
+  }, [modActionsData]);
 
   // Subscribe to live messages for this user
   useEffect(() => {
@@ -126,9 +172,6 @@ function UserProfileCard({
     refetchMessages();
     refetchModActions();
   };
-
-  const messages = messagesData?.messages || [];
-  const modActions = modActionsData?.actions || [];
 
   // Combine live messages with fetched messages for display
   const displayMessages = activeTab === 'messages' ? [
@@ -320,29 +363,47 @@ function UserProfileCard({
                 ) : displayMessages.length === 0 ? (
                   <p className="text-center text-gray-400 text-xs py-4">No messages</p>
                 ) : (
-                  displayMessages.map((msg, idx) => (
-                    <div 
-                      key={msg.id || msg.messageId || idx} 
-                      className={`rounded p-1.5 text-xs ${
-                        msg.isLive ? 'bg-green-900/30 border border-green-700/50' : 'bg-twitch-dark'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-1.5 text-gray-400 mb-0.5">
-                        <span>{formatTime(msg.timestamp)}</span>
-                        <span className="text-twitch-purple">#{msg.channel_name}</span>
-                        {msg.isLive && <span className="text-green-400">• Live</span>}
+                  <>
+                    {displayMessages.map((msg, idx) => (
+                      <div 
+                        key={msg.id || msg.messageId || idx} 
+                        className={`rounded p-1.5 text-xs ${
+                          msg.isLive ? 'bg-green-900/30 border border-green-700/50' : 'bg-twitch-dark'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-1.5 text-gray-400 mb-0.5">
+                          <span>{formatTime(msg.timestamp)}</span>
+                          <span className="text-twitch-purple">#{msg.channel_name}</span>
+                          {msg.isLive && <span className="text-green-400">• Live</span>}
+                        </div>
+                        <p className="text-white break-words text-xs">
+                          <EmoteRenderer 
+                            parts={parseMessageWithEmotes(
+                              msg.message_text, 
+                              msg.emotes || [], 
+                              msg.channel_twitch_id
+                            )} 
+                          />
+                        </p>
                       </div>
-                      <p className="text-white break-words text-xs">
-                        <EmoteRenderer 
-                          parts={parseMessageWithEmotes(
-                            msg.message_text, 
-                            msg.emotes || [], 
-                            msg.channel_twitch_id
-                          )} 
-                        />
-                      </p>
-                    </div>
-                  ))
+                    ))}
+                    {hasNextMessages && (
+                      <button
+                        onClick={() => fetchNextMessages()}
+                        disabled={isFetchingNextMessages}
+                        className="w-full py-1.5 text-xs text-twitch-purple hover:text-white hover:bg-gray-700 rounded flex items-center justify-center gap-1"
+                      >
+                        {isFetchingNextMessages ? (
+                          <LoadingSpinner size="xs" />
+                        ) : (
+                          <>
+                            <ChevronDown className="w-3 h-3" />
+                            Load more
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -356,27 +417,45 @@ function UserProfileCard({
                 ) : modActions.length === 0 ? (
                   <p className="text-center text-gray-400 text-xs py-4">No mod actions</p>
                 ) : (
-                  modActions.map((action, idx) => (
-                    <div key={action.id || idx} className="bg-twitch-dark rounded p-1.5 text-xs">
-                      <div className="flex items-center space-x-1.5 mb-0.5">
-                        {action.action_type === 'ban' ? (
-                          <Ban className="w-3 h-3 text-red-400" />
+                  <>
+                    {modActions.map((action, idx) => (
+                      <div key={action.id || idx} className="bg-twitch-dark rounded p-1.5 text-xs">
+                        <div className="flex items-center space-x-1.5 mb-0.5">
+                          {action.action_type === 'ban' ? (
+                            <Ban className="w-3 h-3 text-red-400" />
+                          ) : (
+                            <Clock className="w-3 h-3 text-yellow-400" />
+                          )}
+                          <span className={`font-medium ${
+                            action.action_type === 'ban' ? 'text-red-400' : 'text-yellow-400'
+                          }`}>
+                            {action.action_type === 'ban' ? 'Ban' : `${action.duration}s`}
+                          </span>
+                          <span className="text-twitch-purple">#{action.channel_name}</span>
+                        </div>
+                        <div className="text-gray-400">
+                          {formatRelative(action.timestamp)}
+                          {action.reason && <span className="ml-1">• {action.reason}</span>}
+                        </div>
+                      </div>
+                    ))}
+                    {hasNextModActions && (
+                      <button
+                        onClick={() => fetchNextModActions()}
+                        disabled={isFetchingNextModActions}
+                        className="w-full py-1.5 text-xs text-twitch-purple hover:text-white hover:bg-gray-700 rounded flex items-center justify-center gap-1"
+                      >
+                        {isFetchingNextModActions ? (
+                          <LoadingSpinner size="xs" />
                         ) : (
-                          <Clock className="w-3 h-3 text-yellow-400" />
+                          <>
+                            <ChevronDown className="w-3 h-3" />
+                            Load more
+                          </>
                         )}
-                        <span className={`font-medium ${
-                          action.action_type === 'ban' ? 'text-red-400' : 'text-yellow-400'
-                        }`}>
-                          {action.action_type === 'ban' ? 'Ban' : `${action.duration}s`}
-                        </span>
-                        <span className="text-twitch-purple">#{action.channel_name}</span>
-                      </div>
-                      <div className="text-gray-400">
-                        {formatRelative(action.timestamp)}
-                        {action.reason && <span className="ml-1">• {action.reason}</span>}
-                      </div>
-                    </div>
-                  ))
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             )}

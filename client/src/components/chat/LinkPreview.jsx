@@ -57,6 +57,14 @@ function detectLinkType(url) {
       }
     }
     
+    // 7TV Emotes
+    if (hostname.includes('7tv.app')) {
+      const emoteMatch = urlObj.pathname.match(/\/emotes\/([A-Za-z0-9]+)/);
+      if (emoteMatch) {
+        return { type: '7tv', emoteId: emoteMatch[1] };
+      }
+    }
+    
     return { type: 'generic' };
   } catch {
     return { type: 'generic' };
@@ -341,6 +349,127 @@ async function fetchLinkMetadata(url) {
   return response.json();
 }
 
+// 7TV Emote Embed Component
+function SevenTVEmbed({ emoteId, url, onDismiss }) {
+  const { data: emoteData, isLoading, error } = useQuery({
+    queryKey: ['7tv-emote', emoteId],
+    queryFn: async () => {
+      const response = await fetch(`https://7tv.io/v3/emotes/${emoteId}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch emote');
+      }
+      return response.json();
+    },
+    staleTime: 1000 * 60 * 60, // Cache for 1 hour
+    retry: 1,
+  });
+
+  if (error) {
+    return null;
+  }
+
+  if (isLoading) {
+    return (
+      <div className="mt-2 max-w-xs">
+        <div className="rounded-lg border border-gray-700 bg-twitch-dark p-3 animate-pulse">
+          <div className="flex items-center space-x-3">
+            <div className="w-16 h-16 bg-gray-700 rounded"></div>
+            <div className="flex-1 space-y-2">
+              <div className="h-4 bg-gray-700 rounded w-24"></div>
+              <div className="h-3 bg-gray-700 rounded w-16"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Get the best emote URL (4x size, webp format preferred)
+  const emoteFile = emoteData?.host?.files?.find(f => f.name === '4x.webp') 
+    || emoteData?.host?.files?.find(f => f.name === '4x.png')
+    || emoteData?.host?.files?.find(f => f.name === '3x.webp')
+    || emoteData?.host?.files?.find(f => f.name === '2x.webp')
+    || emoteData?.host?.files?.[0];
+  
+  const emoteUrl = emoteFile 
+    ? `https:${emoteData.host.url}/${emoteFile.name}`
+    : null;
+
+  const isAnimated = emoteData?.animated;
+  const emoteName = emoteData?.name;
+  const ownerName = emoteData?.owner?.display_name || emoteData?.owner?.username;
+
+  return (
+    <div className="mt-2 max-w-xs relative group">
+      <button
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onDismiss();
+        }}
+        className="absolute -top-1 -right-1 p-1 bg-gray-800 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-20 hover:bg-gray-700"
+        title="Dismiss preview"
+      >
+        <X className="w-3 h-3 text-gray-400" />
+      </button>
+      
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block rounded-lg overflow-hidden border border-gray-700 bg-twitch-dark hover:border-gray-600 transition-colors"
+      >
+        <div className="p-3 flex items-center space-x-3">
+          {/* Emote image */}
+          <div className="flex-shrink-0 w-16 h-16 flex items-center justify-center bg-gray-900 rounded">
+            {emoteUrl && (
+              <img
+                src={emoteUrl}
+                alt={emoteName || 'Emote'}
+                className="max-w-full max-h-full object-contain"
+              />
+            )}
+          </div>
+          
+          {/* Emote info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center space-x-2 mb-1">
+              {/* 7TV Logo */}
+              <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 109.6 80.9" fill="currentColor">
+                <path fill="#4FC2BC" d="M82.1,80.9L49.5,34.8l6.2-8.6l38.8,54.7H82.1z"/>
+                <path fill="#4FC2BC" d="M27.5,80.9L60.1,34.8l-6.2-8.6L15,80.9H27.5z"/>
+                <path fill="#fff" d="M43.3,56.9L14.5,17h12.8l22.3,31.4L43.3,56.9z"/>
+                <path fill="#fff" d="M66.3,56.9l28.8-39.9H82.2L60.1,48.4L66.3,56.9z"/>
+                <polygon fill="#4FC2BC" points="65.3,9 54.8,23.5 44.3,9 44.3,0 54.8,14.5 65.3,0"/>
+              </svg>
+              <span className="text-[#4FC2BC] text-xs font-medium">7TV</span>
+              {isAnimated && (
+                <span className="px-1.5 py-0.5 text-[10px] bg-purple-500/20 text-purple-400 rounded">
+                  Animated
+                </span>
+              )}
+            </div>
+            
+            {/* Emote name */}
+            <h4 className="text-white font-medium text-sm truncate">
+              {emoteName || 'Unknown Emote'}
+            </h4>
+            
+            {/* Owner */}
+            {ownerName && (
+              <p className="text-gray-500 text-xs truncate">
+                by {ownerName}
+              </p>
+            )}
+          </div>
+          
+          <ExternalLink className="w-4 h-4 text-gray-500 flex-shrink-0" />
+        </div>
+      </a>
+    </div>
+  );
+}
+
 function SingleLinkPreview({ url }) {
   const [dismissed, setDismissed] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -411,6 +540,11 @@ function SingleLinkPreview({ url }) {
   // Twitter/X embed
   if (linkInfo.type === 'twitter' && linkInfo.tweetId) {
     return <TwitterEmbed username={linkInfo.username} tweetId={linkInfo.tweetId} url={url} onDismiss={handleDismiss} metadata={metadata} />;
+  }
+
+  // 7TV emote embed - handles its own loading state
+  if (linkInfo.type === '7tv' && linkInfo.emoteId) {
+    return <SevenTVEmbed emoteId={linkInfo.emoteId} url={url} onDismiss={handleDismiss} />;
   }
 
   if (!metadata || (!metadata.title && !metadata.description && !metadata.image)) {

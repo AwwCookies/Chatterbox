@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import Navbar from './components/layout/Navbar'
 import Sidebar from './components/layout/Sidebar'
@@ -18,6 +18,8 @@ import ApiDebugPanel from './components/common/ApiDebugPanel'
 import { useEmotes } from './hooks/useEmotes'
 import { useSettingsStore } from './stores/settingsStore'
 import { useUIStore } from './stores/uiStore'
+import { useMobile, useViewportHeight } from './hooks/useMobile'
+import { MobileNavbar, MobileBottomNav, MobileDrawer, MobileSearch } from './components/mobile'
 
 function App() {
   // Initialize global emotes early
@@ -29,6 +31,12 @@ function App() {
   const closeSettingsModal = useUIStore(state => state.closeSettingsModal);
   const apiDebugPanelOpen = useUIStore(state => state.apiDebugPanelOpen);
   const closeApiDebugPanel = useUIStore(state => state.closeApiDebugPanel);
+  
+  // Mobile detection and state
+  const { isMobile, isTablet } = useMobile();
+  useViewportHeight(); // Sets --vh CSS variable
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   
   useEffect(() => {
     if (isLoaded) {
@@ -88,29 +96,66 @@ function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-twitch-dark text-twitch-light">
-      <Navbar />
-      <div className="flex pt-14">
-        <Sidebar />
-        <main className={`flex-1 p-6 transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
-          <ErrorBoundary>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/messages" element={<Messages />} />
-              <Route path="/user/:username" element={<User />} />
-              <Route path="/channel/:name" element={<Channel />} />
-              <Route path="/moderation" element={<Moderation />} />
-              <Route path="/live" element={<Live />} />
-              <Route path="/channels" element={<Channels />} />
-            </Routes>
-          </ErrorBoundary>
-        </main>
-      </div>
+    <div className="min-h-screen bg-twitch-dark text-twitch-light mobile-safe-area">
+      {/* Desktop Layout */}
+      {!isMobile && (
+        <>
+          <Navbar />
+          <div className="flex pt-14">
+            <Sidebar />
+            <main className={`flex-1 p-6 transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
+              <ErrorBoundary>
+                <Routes>
+                  <Route path="/" element={<Home />} />
+                  <Route path="/messages" element={<Messages />} />
+                  <Route path="/user/:username" element={<User />} />
+                  <Route path="/channel/:name" element={<Channel />} />
+                  <Route path="/moderation" element={<Moderation />} />
+                  <Route path="/live" element={<Live />} />
+                  <Route path="/channels" element={<Channels />} />
+                </Routes>
+              </ErrorBoundary>
+            </main>
+          </div>
+        </>
+      )}
+
+      {/* Mobile Layout */}
+      {isMobile && (
+        <>
+          <MobileNavbar 
+            onMenuClick={() => setMobileDrawerOpen(true)}
+            onSearchClick={() => setMobileSearchOpen(true)}
+          />
+          <main className="pt-14 pb-16 min-h-screen">
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/" element={<Home isMobile />} />
+                <Route path="/messages" element={<Messages isMobile />} />
+                <Route path="/user/:username" element={<User isMobile />} />
+                <Route path="/channel/:name" element={<Channel isMobile />} />
+                <Route path="/moderation" element={<Moderation isMobile />} />
+                <Route path="/live" element={<Live isMobile />} />
+                <Route path="/channels" element={<Channels isMobile />} />
+              </Routes>
+            </ErrorBoundary>
+          </main>
+          <MobileBottomNav onMoreClick={() => setMobileDrawerOpen(true)} />
+          <MobileDrawer 
+            isOpen={mobileDrawerOpen} 
+            onClose={() => setMobileDrawerOpen(false)} 
+          />
+          <MobileSearch 
+            isOpen={mobileSearchOpen} 
+            onClose={() => setMobileSearchOpen(false)} 
+          />
+        </>
+      )}
       
       {/* Global components */}
       <ProfileCardContainer />
       <ToastContainer />
-      <CommandPalette />
+      {!isMobile && <CommandPalette />}
       <SettingsModal isOpen={settingsModalOpen} onClose={closeSettingsModal} />
       <ApiDebugPanel isOpen={apiDebugPanelOpen} onClose={closeApiDebugPanel} />
     </div>

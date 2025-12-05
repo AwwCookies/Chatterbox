@@ -5,8 +5,14 @@ import { channelsApi } from '../services/api';
 import { formatNumber, formatDateTime } from '../utils/formatters';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { Hash, Plus, Trash2, RefreshCw, Power, PowerOff, MessageSquare, ExternalLink } from 'lucide-react';
+import { MobileChannels } from './mobile';
 
-function Channels() {
+function Channels({ isMobile }) {
+  // Render mobile version if on mobile
+  if (isMobile) {
+    return <MobileChannels />;
+  }
+
   const [newChannelName, setNewChannelName] = useState('');
   const [error, setError] = useState('');
   const queryClient = useQueryClient();

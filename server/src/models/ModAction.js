@@ -96,11 +96,56 @@ class ModAction {
       paramIndex++;
     }
     
-    // Get total count
-    const countResult = await query(
-      sql.replace(/SELECT .+ FROM/, 'SELECT COUNT(*) FROM'),
-      params
-    );
+    // Get total count - build count query separately to avoid regex issues
+    let countSql = `
+      SELECT COUNT(*)
+      FROM mod_actions ma
+      JOIN channels c ON ma.channel_id = c.id
+      LEFT JOIN users m ON ma.moderator_id = m.id
+      JOIN users t ON ma.target_user_id = t.id
+      WHERE 1=1
+    `;
+    
+    let countParamIndex = 1;
+    const countParams = [];
+    
+    if (type) {
+      countSql += ` AND ma.action_type = $${countParamIndex}`;
+      countParams.push(type);
+      countParamIndex++;
+    }
+    
+    if (channel) {
+      countSql += ` AND c.name = $${countParamIndex}`;
+      countParams.push(channel.toLowerCase());
+      countParamIndex++;
+    }
+    
+    if (moderator) {
+      countSql += ` AND m.username = $${countParamIndex}`;
+      countParams.push(moderator.toLowerCase());
+      countParamIndex++;
+    }
+    
+    if (target) {
+      countSql += ` AND t.username = $${countParamIndex}`;
+      countParams.push(target.toLowerCase());
+      countParamIndex++;
+    }
+    
+    if (since) {
+      countSql += ` AND ma.timestamp >= $${countParamIndex}`;
+      countParams.push(since);
+      countParamIndex++;
+    }
+    
+    if (until) {
+      countSql += ` AND ma.timestamp <= $${countParamIndex}`;
+      countParams.push(until);
+      countParamIndex++;
+    }
+    
+    const countResult = await query(countSql, countParams);
     const total = parseInt(countResult.rows[0].count);
     
     // Add ordering and pagination
@@ -222,6 +267,15 @@ class ModAction {
   static async getByTargetUser(userId, options = {}) {
     const { limit = 50, offset = 0 } = options;
     
+    // Get total count
+    const countResult = await query(
+      `SELECT COUNT(*)
+       FROM mod_actions ma
+       WHERE ma.target_user_id = $1`,
+      [userId]
+    );
+    const total = parseInt(countResult.rows[0].count);
+    
     const result = await query(
       `SELECT ma.*, 
               c.name as channel_name,
@@ -238,7 +292,12 @@ class ModAction {
        LIMIT $2 OFFSET $3`,
       [userId, limit, offset]
     );
-    return result.rows;
+    
+    return {
+      actions: result.rows,
+      total,
+      hasMore: offset + result.rows.length < total
+    };
   }
 }
 

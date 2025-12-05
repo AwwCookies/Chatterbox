@@ -76,7 +76,41 @@ socket.on('chat_message', (event) => {
 
 ## Authentication
 
-Currently, the API does **not require authentication**. All endpoints are publicly accessible.
+Most read endpoints (GET requests) are **publicly accessible** without authentication.
+
+**Sensitive endpoints require API key authentication:**
+- `POST /api/channels` - Add new channel
+- `PATCH /api/channels/:name` - Update channel
+- `DELETE /api/channels/:name` - Remove channel
+- `POST /api/channels/:name/rejoin` - Rejoin IRC
+
+### Using API Key Authentication
+
+Include the `X-API-Key` header in your request:
+
+```bash
+curl -X POST "https://api.example.com/api/channels" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-api-key" \
+  -d '{"name": "channelname"}'
+```
+
+### Authentication Errors
+
+**Missing API Key (401):**
+```json
+{
+  "error": "API key required",
+  "hint": "Include X-API-Key header"
+}
+```
+
+**Invalid API Key (403):**
+```json
+{
+  "error": "Invalid API key"
+}
+```
 
 ---
 
@@ -306,7 +340,9 @@ Full-text search across message content with relevance ranking.
       "timestamp": "2025-12-04T15:45:30.123Z",
       "rank": 0.0607927
     }
-  ]
+  ],
+  "total": 1523,
+  "hasMore": true
 }
 ```
 
@@ -469,6 +505,8 @@ Get a user's message history.
       "badges": []
     }
   ],
+  "total": 1250,
+  "hasMore": true,
   "user": {
     "id": 42,
     "username": "chatuser123",
@@ -511,6 +549,8 @@ Get moderation actions taken against a user.
       "moderator_username": "mod_user"
     }
   ],
+  "total": 45,
+  "hasMore": false,
   "user": {
     "id": 42,
     "username": "chatuser123"

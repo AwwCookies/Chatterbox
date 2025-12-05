@@ -38,6 +38,7 @@ services:
       PORT: 3000
       LOG_LEVEL: ${LOG_LEVEL:-info}
       CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
+      API_KEY: ${API_KEY}
     ports:
       - "3000:3000"
     depends_on:

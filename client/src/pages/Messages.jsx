@@ -1,13 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useMessages, useMessageSearch } from '../hooks/useMessages';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { messagesApi } from '../services/api';
 import MessageList from '../components/chat/MessageList';
 import SearchBar from '../components/common/SearchBar';
-import Pagination from '../components/common/Pagination';
+import InfiniteScroll from '../components/common/InfiniteScroll';
 import { MessageSquare, Filter, RefreshCw } from 'lucide-react';
 import { useSettingsStore } from '../stores/settingsStore';
+import { MobileMessages } from './mobile';
 
-function Messages() {
+function Messages({ isMobile }) {
+  // Render mobile version if on mobile
+  if (isMobile) {
+    return <MobileMessages />;
+  }
+
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [filters, setFilters] = useState({
@@ -15,7 +22,6 @@ function Messages() {
     user: searchParams.get('user') || '',
     includeDeleted: searchParams.get('includeDeleted') === 'true',
   });
-  const [page, setPage] = useState(1);
   const resultsPerPage = useSettingsStore(state => state.resultsPerPage);
 
   // Sync URL params when filters change
@@ -28,32 +34,57 @@ function Messages() {
     setSearchParams(params, { replace: true });
   }, [searchQuery, filters, setSearchParams]);
 
-  const params = {
-    ...filters,
-    limit: resultsPerPage,
-    offset: (page - 1) * resultsPerPage,
-    search: searchQuery || undefined,
-  };
+  const {
+    data,
+    isLoading,
+    error,
+    refetch,
+    isFetching,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['messages', 'infinite', filters, searchQuery],
+    queryFn: async ({ pageParam = 0 }) => {
+      const params = {
+        ...filters,
+        limit: resultsPerPage,
+        offset: pageParam,
+      };
+      const response = searchQuery
+        ? await messagesApi.search({ q: searchQuery, ...params })
+        : await messagesApi.getAll(params);
+      // Include offset in returned data for pagination calculation
+      return { ...response.data, _offset: pageParam, _limit: resultsPerPage };
+    },
+    getNextPageParam: (lastPage) => {
+      // Use hasMore from API if available
+      if (lastPage.hasMore) {
+        return lastPage._offset + lastPage._limit;
+      }
+      // Fallback: calculate based on total
+      const nextOffset = lastPage._offset + (lastPage.messages?.length || 0);
+      if (lastPage.total && nextOffset < lastPage.total) {
+        return nextOffset;
+      }
+      return undefined;
+    },
+    initialPageParam: 0,
+  });
 
-  const messagesQuery = useMessages(params);
-  const searchQueryResult = useMessageSearch(searchQuery, params);
-  
-  const { data, isLoading, error, refetch, isFetching } = searchQuery
-    ? searchQueryResult
-    : messagesQuery;
+  // Flatten all pages into a single messages array
+  const messages = useMemo(() => {
+    return data?.pages?.flatMap(page => page.messages || []) || [];
+  }, [data]);
 
-  const messages = data?.messages || [];
-  const total = data?.total || 0;
-  const totalPages = Math.ceil(total / resultsPerPage);
+  const total = data?.pages?.[0]?.total || 0;
 
   const handleSearch = (query) => {
     setSearchQuery(query);
-    setPage(1);
   };
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
-    setPage(1);
   };
 
   return (
@@ -123,26 +154,22 @@ function Messages() {
         </button>
       </div>
 
-      {/* Message List */}
+      {/* Message List with Infinite Scroll */}
       <div className="bg-twitch-gray rounded-lg border border-gray-700">
-        <MessageList 
-          messages={messages}
+        <InfiniteScroll
+          hasNextPage={hasNextPage}
+          isFetchingNextPage={isFetchingNextPage}
+          fetchNextPage={fetchNextPage}
           isLoading={isLoading}
-          error={error}
-          showChannel={!filters.channel}
-        />
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex justify-center">
-          <Pagination 
-            currentPage={page}
-            totalPages={totalPages}
-            onPageChange={setPage}
+        >
+          <MessageList 
+            messages={messages}
+            isLoading={isLoading}
+            error={error}
+            showChannel={!filters.channel}
           />
-        </div>
-      )}
+        </InfiniteScroll>
+      </div>
     </div>
   );
 }

@@ -7,8 +7,14 @@ import LiveFeed from '../components/chat/LiveFeed';
 import ModActionList from '../components/moderation/ModActionList';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import { Radio, Shield, X } from 'lucide-react';
+import { MobileLive } from './mobile';
 
-function Live() {
+function Live({ isMobile }) {
+  // Render mobile version if on mobile
+  if (isMobile) {
+    return <MobileLive />;
+  }
+
   const [selectedChannels, setSelectedChannels] = useState([]);
   
   const { data: channelsData, isLoading: channelsLoading } = useQuery({

@@ -1,6 +1,18 @@
 import axios from 'axios';
+import { useSettingsStore } from '../stores/settingsStore';
 
-const API_URL = import.meta.env.VITE_API_URL || '';
+// Dynamically determine API URL based on current location
+// Use env var if set, otherwise use current origin (works on any IP/hostname)
+const getApiUrl = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  // In production, API is on port 3000 of the same host
+  const { protocol, hostname } = window.location;
+  return `${protocol}//${hostname}:3000`;
+};
+
+const API_URL = getApiUrl();
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,
@@ -10,9 +22,19 @@ const api = axios.create({
   },
 });
 
-// Request interceptor for logging
+// Request interceptor for logging and adding API key
 api.interceptors.request.use((config) => {
   console.debug(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+  
+  // Add API key header for authenticated requests (POST, PATCH, PUT, DELETE)
+  const method = config.method?.toUpperCase();
+  if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) {
+    const apiKey = useSettingsStore.getState().apiKey;
+    if (apiKey) {
+      config.headers['X-API-Key'] = apiKey;
+    }
+  }
+  
   return config;
 });
 

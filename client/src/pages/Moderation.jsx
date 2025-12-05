@@ -1,14 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useModActions, useModActionStats } from '../hooks/useModActions';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { modActionsApi } from '../services/api';
+import { useModActionStats } from '../hooks/useModActions';
 import ModActionList from '../components/moderation/ModActionList';
-import Pagination from '../components/common/Pagination';
+import InfiniteScroll from '../components/common/InfiniteScroll';
 import { Shield, Filter, BarChart3, RefreshCw } from 'lucide-react';
 import { formatNumber, capitalize } from '../utils/formatters';
 import { ACTION_TYPES } from '../utils/constants';
 import { useSettingsStore } from '../stores/settingsStore';
+import { MobileModeration } from './mobile';
 
-function Moderation() {
+function Moderation({ isMobile }) {
+  // Render mobile version if on mobile
+  if (isMobile) {
+    return <MobileModeration />;
+  }
+
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState({
     type: searchParams.get('type') || '',
@@ -16,7 +24,6 @@ function Moderation() {
     moderator: searchParams.get('moderator') || '',
     target: searchParams.get('target') || '',
   });
-  const [page, setPage] = useState(1);
   const resultsPerPage = useSettingsStore(state => state.resultsPerPage);
 
   // Sync URL params when filters change
@@ -29,22 +36,50 @@ function Moderation() {
     setSearchParams(params, { replace: true });
   }, [filters, setSearchParams]);
 
-  const params = {
-    ...filters,
-    limit: resultsPerPage,
-    offset: (page - 1) * resultsPerPage,
-  };
+  const {
+    data,
+    isLoading,
+    error,
+    refetch,
+    isFetching,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['mod-actions', 'infinite', filters],
+    queryFn: async ({ pageParam = 0 }) => {
+      const params = {
+        ...filters,
+        limit: resultsPerPage,
+        offset: pageParam,
+      };
+      const response = await modActionsApi.getAll(params);
+      return { ...response.data, _offset: pageParam, _limit: resultsPerPage };
+    },
+    getNextPageParam: (lastPage) => {
+      if (lastPage.hasMore) {
+        return lastPage._offset + lastPage._limit;
+      }
+      const nextOffset = lastPage._offset + (lastPage.actions?.length || 0);
+      if (lastPage.total && nextOffset < lastPage.total) {
+        return nextOffset;
+      }
+      return undefined;
+    },
+    initialPageParam: 0,
+  });
 
-  const { data, isLoading, error, refetch, isFetching } = useModActions(params);
   const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useModActionStats({ channel: filters.channel });
 
-  const actions = data?.actions || [];
-  const total = data?.total || 0;
-  const totalPages = Math.ceil(total / resultsPerPage);
+  // Flatten all pages into a single actions array
+  const actions = useMemo(() => {
+    return data?.pages?.flatMap(page => page.actions || []) || [];
+  }, [data]);
+
+  const total = data?.pages?.[0]?.total || 0;
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
-    setPage(1);
   };
 
   return (
@@ -153,25 +188,21 @@ function Moderation() {
         </button>
       </div>
 
-      {/* Action List */}
+      {/* Action List with Infinite Scroll */}
       <div className="bg-twitch-gray rounded-lg border border-gray-700">
-        <ModActionList 
-          actions={actions}
+        <InfiniteScroll
+          hasNextPage={hasNextPage}
+          isFetchingNextPage={isFetchingNextPage}
+          fetchNextPage={fetchNextPage}
           isLoading={isLoading}
-          error={error}
-        />
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex justify-center">
-          <Pagination 
-            currentPage={page}
-            totalPages={totalPages}
-            onPageChange={setPage}
+        >
+          <ModActionList 
+            actions={actions}
+            isLoading={isLoading}
+            error={error}
           />
-        </div>
-      )}
+        </InfiniteScroll>
+      </div>
     </div>
   );
 }

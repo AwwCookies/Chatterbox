@@ -2,6 +2,7 @@ import { Router } from 'express';
 import Channel from '../models/Channel.js';
 import Message from '../models/Message.js';
 import { validatePagination, validateDate, sanitizeChannelName } from '../utils/validators.js';
+import { requireAuth } from '../middleware/auth.js';
 import logger from '../utils/logger.js';
 
 const router = Router();
@@ -75,8 +76,9 @@ router.get('/:name/stats', async (req, res) => {
 /**
  * POST /api/channels
  * Add new channel to monitor
+ * Requires authentication
  */
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const { name } = req.body;
 
@@ -111,8 +113,9 @@ router.post('/', async (req, res) => {
 /**
  * PATCH /api/channels/:name
  * Update channel status
+ * Requires authentication
  */
-router.patch('/:name', async (req, res) => {
+router.patch('/:name', requireAuth, async (req, res) => {
   try {
     const name = sanitizeChannelName(req.params.name);
     const { is_active } = req.body;
@@ -148,8 +151,9 @@ router.patch('/:name', async (req, res) => {
 /**
  * DELETE /api/channels/:name
  * Remove channel (soft delete)
+ * Requires authentication
  */
-router.delete('/:name', async (req, res) => {
+router.delete('/:name', requireAuth, async (req, res) => {
   try {
     const name = sanitizeChannelName(req.params.name);
 
@@ -176,8 +180,9 @@ router.delete('/:name', async (req, res) => {
 /**
  * POST /api/channels/:name/rejoin
  * Rejoin a channel's IRC
+ * Requires authentication
  */
-router.post('/:name/rejoin', async (req, res) => {
+router.post('/:name/rejoin', requireAuth, async (req, res) => {
   try {
     const name = sanitizeChannelName(req.params.name);
 

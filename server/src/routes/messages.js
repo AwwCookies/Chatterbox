@@ -54,14 +54,14 @@ router.get('/search', async (req, res) => {
     const channel = sanitizeChannelName(req.query.channel);
     const user = sanitizeUsername(req.query.user);
 
-    const messages = await Message.search(q.trim(), {
+    const result = await Message.search(q.trim(), {
       channel,
       user,
       limit,
       offset
     });
 
-    res.json({ messages });
+    res.json(result);
   } catch (error) {
     logger.error('Error searching messages:', error.message);
     res.status(500).json({ error: 'Failed to search messages' });

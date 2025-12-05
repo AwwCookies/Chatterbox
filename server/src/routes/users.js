@@ -71,7 +71,7 @@ router.get('/:username/messages', async (req, res) => {
     const until = validateDate(req.query.until);
     const channel = sanitizeChannelName(req.query.channel);
 
-    const messages = await Message.getByUser(user.id, {
+    const result = await Message.getByUser(user.id, {
       channel,
       limit,
       offset,
@@ -79,7 +79,12 @@ router.get('/:username/messages', async (req, res) => {
       until
     });
 
-    res.json({ messages, user });
+    res.json({ 
+      messages: result.messages, 
+      total: result.total,
+      hasMore: result.hasMore,
+      user 
+    });
   } catch (error) {
     logger.error('Error fetching user messages:', error.message);
     res.status(500).json({ error: 'Failed to fetch user messages' });
@@ -100,9 +105,14 @@ router.get('/:username/mod-actions', async (req, res) => {
     }
 
     const { limit, offset } = validatePagination(req.query);
-    const actions = await ModAction.getByTargetUser(user.id, { limit, offset });
+    const result = await ModAction.getByTargetUser(user.id, { limit, offset });
 
-    res.json({ actions, user });
+    res.json({ 
+      actions: result.actions, 
+      total: result.total,
+      hasMore: result.hasMore,
+      user 
+    });
   } catch (error) {
     logger.error('Error fetching user mod actions:', error.message);
     res.status(500).json({ error: 'Failed to fetch user mod actions' });

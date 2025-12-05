@@ -2,9 +2,9 @@ FROM node:18-alpine AS build
 
 WORKDIR /app
 
-# Set build args
-ARG VITE_API_URL=http://localhost:3000
-ARG VITE_WS_URL=ws://localhost:3000
+# Build args - leave empty to use dynamic URL detection
+ARG VITE_API_URL=
+ARG VITE_WS_URL=
 
 # Copy package files
 COPY package*.json ./
@@ -15,7 +15,7 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Build the application
+# Build the application (env vars will be empty, triggering dynamic detection)
 ENV VITE_API_URL=$VITE_API_URL
 ENV VITE_WS_URL=$VITE_WS_URL
 RUN npm run build

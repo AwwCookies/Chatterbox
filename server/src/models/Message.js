@@ -136,11 +136,55 @@ class Message {
       paramIndex++;
     }
     
-    // Get total count
-    const countResult = await query(
-      sql.replace(/SELECT .+ FROM/, 'SELECT COUNT(*) FROM'),
-      params
-    );
+    // Get total count - build count query separately to avoid regex issues
+    let countSql = `
+      SELECT COUNT(*) 
+      FROM messages m
+      JOIN users u ON m.user_id = u.id
+      JOIN channels c ON m.channel_id = c.id
+      LEFT JOIN users del ON m.deleted_by_id = del.id
+      WHERE 1=1
+    `;
+    
+    // Re-apply the same WHERE conditions for count
+    let countParamIndex = 1;
+    const countParams = [];
+    
+    if (!includeDeleted) {
+      countSql += ` AND m.is_deleted = FALSE`;
+    }
+    
+    if (channel) {
+      countSql += ` AND c.name = $${countParamIndex}`;
+      countParams.push(channel.toLowerCase());
+      countParamIndex++;
+    }
+    
+    if (user) {
+      countSql += ` AND u.username = $${countParamIndex}`;
+      countParams.push(user.toLowerCase());
+      countParamIndex++;
+    }
+    
+    if (since) {
+      countSql += ` AND m.timestamp >= $${countParamIndex}`;
+      countParams.push(since);
+      countParamIndex++;
+    }
+    
+    if (until) {
+      countSql += ` AND m.timestamp <= $${countParamIndex}`;
+      countParams.push(until);
+      countParamIndex++;
+    }
+    
+    if (search) {
+      countSql += ` AND to_tsvector('english', m.message_text) @@ plainto_tsquery('english', $${countParamIndex})`;
+      countParams.push(search);
+      countParamIndex++;
+    }
+    
+    const countResult = await query(countSql, countParams);
     const total = parseInt(countResult.rows[0].count);
     
     // Add ordering and pagination
@@ -207,14 +251,8 @@ class Message {
   static async search(searchTerm, options = {}) {
     const { channel, user, limit = 50, offset = 0 } = options;
     
-    let sql = `
-      SELECT m.*, 
-             u.username, u.display_name as user_display_name,
-             c.name as channel_name, c.twitch_id as channel_twitch_id,
-             ts_rank(to_tsvector('english', m.message_text), plainto_tsquery('english', $1)) as rank
-      FROM messages m
-      JOIN users u ON m.user_id = u.id
-      JOIN channels c ON m.channel_id = c.id
+    // Build WHERE clause
+    let whereClause = `
       WHERE to_tsvector('english', m.message_text) @@ plainto_tsquery('english', $1)
         AND m.is_deleted = FALSE
     `;
@@ -223,22 +261,48 @@ class Message {
     let paramIndex = 2;
     
     if (channel) {
-      sql += ` AND c.name = $${paramIndex}`;
+      whereClause += ` AND c.name = $${paramIndex}`;
       params.push(channel.toLowerCase());
       paramIndex++;
     }
     
     if (user) {
-      sql += ` AND u.username = $${paramIndex}`;
+      whereClause += ` AND u.username = $${paramIndex}`;
       params.push(user.toLowerCase());
       paramIndex++;
     }
+
+    // Count query
+    const countSql = `
+      SELECT COUNT(*) as total
+      FROM messages m
+      JOIN users u ON m.user_id = u.id
+      JOIN channels c ON m.channel_id = c.id
+      ${whereClause}
+    `;
+    const countResult = await query(countSql, params.slice(0, paramIndex - 1));
+    const total = parseInt(countResult.rows[0].total, 10);
     
-    sql += ` ORDER BY rank DESC, m.timestamp DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+    // Data query
+    const sql = `
+      SELECT m.*, 
+             u.username, u.display_name as user_display_name,
+             c.name as channel_name, c.twitch_id as channel_twitch_id,
+             ts_rank(to_tsvector('english', m.message_text), plainto_tsquery('english', $1)) as rank
+      FROM messages m
+      JOIN users u ON m.user_id = u.id
+      JOIN channels c ON m.channel_id = c.id
+      ${whereClause}
+      ORDER BY rank DESC, m.timestamp DESC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
     params.push(limit, offset);
     
     const result = await query(sql, params);
-    return result.rows;
+    const messages = result.rows;
+    const hasMore = offset + messages.length < total;
+    
+    return { messages, total, hasMore };
   }
 
   /**
@@ -275,11 +339,46 @@ class Message {
       paramIndex++;
     }
     
+    // Build count query
+    let countSql = `
+      SELECT COUNT(*)
+      FROM messages m
+      JOIN channels c ON m.channel_id = c.id
+      WHERE m.user_id = $1 AND m.is_deleted = FALSE
+    `;
+    const countParams = [userId];
+    let countParamIndex = 2;
+    
+    if (channel) {
+      countSql += ` AND c.name = $${countParamIndex}`;
+      countParams.push(channel.toLowerCase());
+      countParamIndex++;
+    }
+    
+    if (since) {
+      countSql += ` AND m.timestamp >= $${countParamIndex}`;
+      countParams.push(since);
+      countParamIndex++;
+    }
+    
+    if (until) {
+      countSql += ` AND m.timestamp <= $${countParamIndex}`;
+      countParams.push(until);
+      countParamIndex++;
+    }
+    
+    const countResult = await query(countSql, countParams);
+    const total = parseInt(countResult.rows[0].count);
+    
     sql += ` ORDER BY m.timestamp DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
     params.push(limit, offset);
     
     const result = await query(sql, params);
-    return result.rows;
+    return {
+      messages: result.rows,
+      total,
+      hasMore: offset + result.rows.length < total
+    };
   }
 
   /**
