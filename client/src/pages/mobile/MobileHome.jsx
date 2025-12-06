@@ -213,12 +213,18 @@ function MobileHome() {
                         {(channel.display_name || channel.name).charAt(0).toUpperCase()}
                       </div>
                       <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-twitch-gray ${
-                        channel.is_live ? 'bg-red-500' : 'bg-green-500'
+                        channel.is_live ? 'bg-red-500' : channel.is_joined ? 'bg-green-500' : 'bg-gray-500'
                       }`} />
                     </div>
                     <div>
                       <p className="font-medium text-white">{channel.display_name || channel.name}</p>
-                      <p className="text-xs text-gray-500">{channel.is_live ? 'LIVE' : 'Monitoring'}</p>
+                      <p className="text-xs text-gray-500">
+                        {channel.is_live 
+                          ? `LIVE${channel.viewer_count ? ` • ${channel.viewer_count} viewers` : ''}`
+                          : channel.is_joined 
+                            ? 'Monitoring' 
+                            : 'Not connected'}
+                      </p>
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-gray-500" />

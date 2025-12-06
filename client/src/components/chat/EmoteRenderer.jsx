@@ -1,10 +1,76 @@
 import React from 'react';
+import { useProfileCardStore } from '../../stores/profileCardStore';
 
 // URL regex pattern
 const urlPattern = /https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&//=]*)/gi;
 
-// Render text with clickable links
-function renderTextWithLinks(text, keyPrefix = '') {
+// Mention regex pattern
+const mentionPattern = /@([a-zA-Z0-9_]{1,25})/g;
+
+// Component to render a clickable mention
+function MentionLink({ username }) {
+  const openCard = useProfileCardStore(state => state.openCard);
+  
+  const handleClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    openCard(username);
+  };
+  
+  return (
+    <button
+      onClick={handleClick}
+      className="text-twitch-purple hover:underline font-medium cursor-pointer"
+    >
+      @{username}
+    </button>
+  );
+}
+
+// Render text with mentions highlighted and clickable
+function renderTextWithMentions(text, keyPrefix = '') {
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+  
+  // Reset regex state
+  mentionPattern.lastIndex = 0;
+  
+  while ((match = mentionPattern.exec(text)) !== null) {
+    // Add text before the mention
+    if (match.index > lastIndex) {
+      parts.push(
+        <span key={`${keyPrefix}-text-${lastIndex}`}>
+          {text.slice(lastIndex, match.index)}
+        </span>
+      );
+    }
+    
+    // Add the mention as a clickable link
+    parts.push(
+      <MentionLink 
+        key={`${keyPrefix}-mention-${match.index}`} 
+        username={match[1]} 
+      />
+    );
+    
+    lastIndex = match.index + match[0].length;
+  }
+  
+  // Add remaining text
+  if (lastIndex < text.length) {
+    parts.push(
+      <span key={`${keyPrefix}-text-${lastIndex}`}>
+        {text.slice(lastIndex)}
+      </span>
+    );
+  }
+  
+  return parts.length > 0 ? parts : text;
+}
+
+// Render text with clickable links and mentions
+function renderTextWithLinksAndMentions(text, keyPrefix = '') {
   const parts = [];
   let lastIndex = 0;
   let match;
@@ -13,11 +79,12 @@ function renderTextWithLinks(text, keyPrefix = '') {
   urlPattern.lastIndex = 0;
   
   while ((match = urlPattern.exec(text)) !== null) {
-    // Add text before the URL
+    // Add text before the URL (with mentions parsed)
     if (match.index > lastIndex) {
+      const textBefore = text.slice(lastIndex, match.index);
       parts.push(
         <span key={`${keyPrefix}-text-${lastIndex}`}>
-          {text.slice(lastIndex, match.index)}
+          {renderTextWithMentions(textBefore, `${keyPrefix}-pre-${lastIndex}`)}
         </span>
       );
     }
@@ -39,16 +106,17 @@ function renderTextWithLinks(text, keyPrefix = '') {
     lastIndex = match.index + match[0].length;
   }
   
-  // Add remaining text
+  // Add remaining text (with mentions parsed)
   if (lastIndex < text.length) {
+    const remainingText = text.slice(lastIndex);
     parts.push(
       <span key={`${keyPrefix}-text-${lastIndex}`}>
-        {text.slice(lastIndex)}
+        {renderTextWithMentions(remainingText, `${keyPrefix}-post-${lastIndex}`)}
       </span>
     );
   }
   
-  return parts.length > 0 ? parts : text;
+  return parts.length > 0 ? parts : renderTextWithMentions(text, keyPrefix);
 }
 
 function EmoteRenderer({ parts }) {
@@ -75,10 +143,10 @@ function EmoteRenderer({ parts }) {
             />
           );
         }
-        // Render text with clickable links
+        // Render text with clickable links and mentions
         return (
           <span key={index}>
-            {renderTextWithLinks(part.content, `part-${index}`)}
+            {renderTextWithLinksAndMentions(part.content, `part-${index}`)}
           </span>
         );
       })}

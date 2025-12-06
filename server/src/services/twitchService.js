@@ -98,6 +98,13 @@ class TwitchService {
         const channelName = channel.replace('#', '');
         this.connectedChannels.add(channelName);
         logger.info(`Joined channel: ${channelName}`);
+        
+        // Broadcast channel status update
+        this.websocketService.broadcastChannelStatus({
+          name: channelName,
+          is_connected: true,
+          timestamp: new Date().toISOString()
+        });
       }
     });
 
@@ -107,6 +114,13 @@ class TwitchService {
         const channelName = channel.replace('#', '');
         this.connectedChannels.delete(channelName);
         logger.info(`Left channel: ${channelName}`);
+        
+        // Broadcast channel status update
+        this.websocketService.broadcastChannelStatus({
+          name: channelName,
+          is_connected: false,
+          timestamp: new Date().toISOString()
+        });
       }
     });
   }
@@ -144,6 +158,22 @@ class TwitchService {
       }
     }
 
+    // Parse reply/thread info from IRC tags
+    const replyToMessageId = userstate['reply-parent-msg-id'] || null;
+    const replyToUserId = userstate['reply-parent-user-id'] ? parseInt(userstate['reply-parent-user-id']) : null;
+    const replyToUsername = userstate['reply-parent-user-login'] || null;
+
+    // Extract @mentions from message text
+    const mentionRegex = /@(\w{1,25})/g;
+    const mentionedUsers = [];
+    let match;
+    while ((match = mentionRegex.exec(message)) !== null) {
+      const username = match[1].toLowerCase();
+      if (!mentionedUsers.includes(username)) {
+        mentionedUsers.push(username);
+      }
+    }
+
     // Queue message for batch insert
     const messageData = {
       channelId: channelRecord.id,
@@ -152,10 +182,17 @@ class TwitchService {
       timestamp: new Date(parseInt(userstate['tmi-sent-ts']) || Date.now()),
       messageId: userstate.id,
       badges,
-      emotes
+      emotes,
+      replyToMessageId,
+      replyToUserId,
+      replyToUsername,
+      mentionedUsers: mentionedUsers.length > 0 ? mentionedUsers : null
     };
 
     this.archiveService.queueMessage(messageData);
+
+    // Track message for MPS counter (global and per-channel)
+    this.websocketService.trackMessage(channelName);
 
     // Broadcast to WebSocket clients
     this.websocketService.broadcastMessage(channelName, {
@@ -167,7 +204,11 @@ class TwitchService {
       channel_name: channelName,
       channelName,
       channel_twitch_id: channelRecord.twitch_id,
-      channelTwitchId: channelRecord.twitch_id
+      channelTwitchId: channelRecord.twitch_id,
+      reply_to_message_id: replyToMessageId,
+      reply_to_user_id: replyToUserId,
+      reply_to_username: replyToUsername,
+      mentioned_users: mentionedUsers.length > 0 ? mentionedUsers : null
     });
   }
 
@@ -212,7 +253,8 @@ class TwitchService {
 
     const savedAction = await this.archiveService.recordModAction(modAction);
 
-    this.websocketService.broadcastModAction(channelName, {
+    // Enriched data with usernames for WebSocket broadcasts
+    const enrichedAction = {
       id: savedAction?.id,
       ...modAction,
       action_type: 'ban',
@@ -222,7 +264,13 @@ class TwitchService {
       channel_name: channelName,
       channelName,
       channel_twitch_id: channelRecord.twitch_id
-    });
+    };
+
+    // Broadcast to channel subscribers
+    this.websocketService.broadcastModAction(channelName, enrichedAction);
+    
+    // Broadcast to global subscribers (dashboard)
+    this.websocketService.broadcastGlobalModAction(enrichedAction);
     
     logger.info(`User ${username} banned in ${channelName}`);
   }
@@ -248,7 +296,8 @@ class TwitchService {
 
     const savedAction = await this.archiveService.recordModAction(modAction);
 
-    this.websocketService.broadcastModAction(channelName, {
+    // Enriched data with usernames for WebSocket broadcasts
+    const enrichedAction = {
       id: savedAction?.id,
       ...modAction,
       action_type: 'timeout',
@@ -260,7 +309,13 @@ class TwitchService {
       channel_name: channelName,
       channelName,
       channel_twitch_id: channelRecord.twitch_id
-    });
+    };
+
+    // Broadcast to channel subscribers
+    this.websocketService.broadcastModAction(channelName, enrichedAction);
+    
+    // Broadcast to global subscribers (dashboard)
+    this.websocketService.broadcastGlobalModAction(enrichedAction);
     
     logger.info(`User ${username} timed out for ${duration}s in ${channelName}`);
   }
@@ -347,6 +402,33 @@ class TwitchService {
    */
   getConnectedChannels() {
     return Array.from(this.connectedChannels);
+  }
+
+  /**
+   * Get service status
+   */
+  getStatus() {
+    return {
+      connected: this.client?.readyState() === 'OPEN',
+      channels: Array.from(this.connectedChannels),
+      username: process.env.TWITCH_USERNAME || null,
+    };
+  }
+
+  /**
+   * Reconnect to Twitch IRC
+   */
+  async reconnect() {
+    logger.info('Reconnecting to Twitch IRC...');
+    if (this.client) {
+      try {
+        await this.client.disconnect();
+      } catch (e) {
+        // Ignore disconnect errors
+      }
+    }
+    this.connectedChannels.clear();
+    await this.initialize();
   }
 
   /**

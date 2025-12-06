@@ -10,6 +10,7 @@ class ArchiveService {
     this.flushTimer = null;
     this.isProcessing = false;
     this.websocketService = null;
+    this.statsCallback = null; // Callback to fetch fresh stats
   }
 
   /**
@@ -17,6 +18,13 @@ class ArchiveService {
    */
   setWebsocketService(websocketService) {
     this.websocketService = websocketService;
+  }
+
+  /**
+   * Set callback to fetch stats for broadcasting
+   */
+  setStatsCallback(callback) {
+    this.statsCallback = callback;
   }
 
   /**
@@ -84,6 +92,16 @@ class ArchiveService {
           count: inserted.length,
           timestamp: new Date().toISOString()
         });
+
+        // Broadcast stats update to global subscribers
+        if (this.statsCallback) {
+          try {
+            const stats = await this.statsCallback();
+            this.websocketService.broadcastStatsUpdate(stats);
+          } catch (err) {
+            logger.error('Error broadcasting stats update:', err.message);
+          }
+        }
       }
     } catch (error) {
       logger.error('Error flushing message buffer:', error.message);
@@ -113,7 +131,8 @@ class ArchiveService {
    */
   async recordModAction(actionData) {
     try {
-      return await ModAction.create(actionData);
+      const result = await ModAction.create(actionData);
+      return result;
     } catch (error) {
       logger.error('Error recording mod action:', error.message);
       return null;

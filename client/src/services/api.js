@@ -22,27 +22,68 @@ const api = axios.create({
   },
 });
 
-// Request interceptor for logging and adding API key
+// Request interceptor for logging and adding authentication
 api.interceptors.request.use((config) => {
   console.debug(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
   
-  // Add API key header for authenticated requests (POST, PATCH, PUT, DELETE)
+  // Add API key header for admin requests 
+  // POST, PATCH, PUT, DELETE always include it
+  // GET requests include it if config.requiresAuth is set
   const method = config.method?.toUpperCase();
-  if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method)) {
+  if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(method) || config.requiresAuth) {
     const apiKey = useSettingsStore.getState().apiKey;
     if (apiKey) {
       config.headers['X-API-Key'] = apiKey;
     }
   }
   
+  // Add Bearer token for OAuth endpoints (user auth)
+  // Import auth store dynamically to avoid circular deps
+  if (config.url?.startsWith('/oauth/') && !config.url?.includes('/login') && !config.url?.includes('/callback') && !config.url?.includes('/refresh')) {
+    const authState = JSON.parse(localStorage.getItem('chatterbox-auth') || '{}');
+    const accessToken = authState?.state?.accessToken;
+    if (accessToken) {
+      config.headers['Authorization'] = `Bearer ${accessToken}`;
+    }
+  }
+  
   return config;
 });
 
-// Response interceptor for error handling
+// Response interceptor for error handling and token refresh
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     console.error('API Error:', error.response?.data || error.message);
+    
+    // Handle token expiration
+    if (error.response?.status === 401 && error.response?.data?.code === 'TOKEN_EXPIRED') {
+      const authState = JSON.parse(localStorage.getItem('chatterbox-auth') || '{}');
+      const refreshToken = authState?.state?.refreshToken;
+      
+      if (refreshToken && !error.config._retry) {
+        error.config._retry = true;
+        
+        try {
+          const refreshResponse = await api.post('/oauth/refresh', { refreshToken });
+          const newAccessToken = refreshResponse.data.accessToken;
+          
+          // Update stored token
+          authState.state.accessToken = newAccessToken;
+          localStorage.setItem('chatterbox-auth', JSON.stringify(authState));
+          
+          // Retry original request
+          error.config.headers['Authorization'] = `Bearer ${newAccessToken}`;
+          return api.request(error.config);
+        } catch (refreshError) {
+          // Refresh failed, clear auth state
+          localStorage.removeItem('chatterbox-auth');
+          window.location.href = '/login?error=session_expired';
+          return Promise.reject(refreshError);
+        }
+      }
+    }
+    
     return Promise.reject(error);
   }
 );
@@ -57,10 +98,23 @@ export const messagesApi = {
 // Users API
 export const usersApi = {
   getAll: (params) => api.get('/users', { params }),
+  getTop: (params) => api.get('/users/top', { params }),
+  getBlocked: (params) => api.get('/users/blocked', { params, requiresAuth: true }),
   getByUsername: (username) => api.get(`/users/${username}`),
   getMessages: (username, params) => api.get(`/users/${username}/messages`, { params }),
   getModActions: (username, params) => api.get(`/users/${username}/mod-actions`, { params }),
   getStats: (username) => api.get(`/users/${username}/stats`),
+  exportData: (username) => api.get(`/users/${username}/export`, { requiresAuth: true }),
+  block: (username, reason) => api.post(`/users/${username}/block`, { reason }),
+  unblock: (username) => api.post(`/users/${username}/unblock`),
+  updateNotes: (username, notes) => api.patch(`/users/${username}/notes`, { notes }),
+  deleteMessages: (username) => api.delete(`/users/${username}/messages`),
+  deleteUser: (username) => api.delete(`/users/${username}`),
+  // Analytics
+  getActivityAnalytics: (username, params) => api.get(`/users/${username}/analytics/activity`, { params }),
+  getChannelAnalytics: (username, params) => api.get(`/users/${username}/analytics/channels`, { params }),
+  getEmoteAnalytics: (username, params) => api.get(`/users/${username}/analytics/emotes`, { params }),
+  getSummaryAnalytics: (username, params) => api.get(`/users/${username}/analytics/summary`, { params }),
 };
 
 // Mod Actions API
@@ -87,6 +141,57 @@ export const channelsApi = {
 export const statsApi = {
   getOverview: () => api.get('/stats'),
   getHealth: () => api.get('/health'),
+};
+
+// Auth/OAuth API
+export const authApi = {
+  getMe: () => api.get('/oauth/me'),
+  refresh: (refreshToken) => api.post('/oauth/refresh', { refreshToken }),
+  logout: (refreshToken) => api.post('/oauth/logout', { refreshToken }),
+  logoutAll: () => api.post('/oauth/logout-all'),
+  getFollowedStreams: () => api.get('/oauth/followed-streams'),
+  createRequest: (type, reason) => api.post('/oauth/requests', { type, reason }),
+  cancelRequest: (id) => api.delete(`/oauth/requests/${id}`),
+};
+
+// Admin API
+export const adminApi = {
+  // System
+  getSystem: () => api.get('/admin/system', { requiresAuth: true }),
+  getDatabase: () => api.get('/admin/database', { requiresAuth: true }),
+  
+  // User requests
+  getUserRequests: (params) => api.get('/admin/user-requests', { params, requiresAuth: true }),
+  getPendingRequests: (params) => api.get('/admin/user-requests/pending', { params, requiresAuth: true }),
+  getRequest: (id) => api.get(`/admin/user-requests/${id}`, { requiresAuth: true }),
+  approveRequest: (id, adminNotes) => api.post(`/admin/user-requests/${id}/approve`, { adminNotes }),
+  denyRequest: (id, adminNotes) => api.post(`/admin/user-requests/${id}/deny`, { adminNotes }),
+  
+  // OAuth users
+  getOAuthUsers: (params) => api.get('/admin/oauth-users', { params, requiresAuth: true }),
+  setUserAdmin: (id, isAdmin) => api.post(`/admin/oauth-users/${id}/admin`, { isAdmin }),
+  deleteOAuthUser: (id) => api.delete(`/admin/oauth-users/${id}`),
+  
+  // Server settings (rate limits, etc.)
+  getSettings: () => api.get('/admin/settings', { requiresAuth: true }),
+  updateSetting: (key, value, description) => api.put(`/admin/settings/${key}`, { value, description }),
+  updateSettingsBulk: (configs) => api.post('/admin/settings/bulk', { configs }),
+  resetSettingKey: (key) => api.delete(`/admin/settings/${key}`),
+  
+  // Server configuration (system info - port, env, etc.)
+  getConfig: () => api.get('/admin/config', { requiresAuth: true }),
+  
+  // Traffic analytics
+  getTrafficStats: (timeRange = 'day') => api.get('/admin/traffic', { params: { timeRange }, requiresAuth: true }),
+  cleanupTrafficLogs: (olderThanDays) => api.delete('/admin/traffic/cleanup', { data: { olderThanDays } }),
+  
+  // IP management
+  getIpRules: () => api.get('/admin/ip-rules', { requiresAuth: true }),
+  getIpStatus: (ip) => api.get(`/admin/ip-rules/${encodeURIComponent(ip)}/status`, { requiresAuth: true }),
+  blockIp: (ip, reason, expiresAt) => api.post('/admin/ip-rules/block', { ip, reason, expiresAt }),
+  unblockIp: (ip) => api.post('/admin/ip-rules/unblock', { ip }),
+  setIpRateLimit: (ip, limit, expiresAt) => api.post('/admin/ip-rules/rate-limit', { ip, limit, expiresAt }),
+  deleteIpRule: (id) => api.delete(`/admin/ip-rules/${id}`),
 };
 
 export default api;

@@ -34,6 +34,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-changeme}
       TWITCH_USERNAME: ${TWITCH_USERNAME}
       TWITCH_PASSWORD: ${TWITCH_PASSWORD}
+      TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID}
+      TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET}
       CHANNELS: ${CHANNELS:-}
       PORT: 3000
       LOG_LEVEL: ${LOG_LEVEL:-info}
@@ -63,5 +65,25 @@ services:
       - server
     restart: unless-stopped
 
+  # PostgreSQL Admin GUI - access at http://localhost:5050
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: chatterbox-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@local.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    restart: unless-stopped
+    profiles:
+      - debug
+
 volumes:
   pgdata:
+  pgadmin_data:

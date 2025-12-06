@@ -20,6 +20,7 @@ class WebSocketService {
     this.subscribedChannels = new Set();
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
+    this.isSubscribedGlobal = false;
   }
 
   connect() {
@@ -42,6 +43,11 @@ class WebSocketService {
       // Resubscribe to channels
       if (this.subscribedChannels.size > 0) {
         this.subscribe(Array.from(this.subscribedChannels));
+      }
+      
+      // Resubscribe to global if was previously subscribed
+      if (this.isSubscribedGlobal) {
+        this.socket.emit('subscribe_global');
       }
     });
 
@@ -71,8 +77,33 @@ class WebSocketService {
       this.emit('messages_flushed', data);
     });
 
+    // Global events for dashboard
+    this.socket.on('stats_update', (data) => {
+      this.emit('stats_update', data);
+    });
+
+    this.socket.on('channel_status', (data) => {
+      this.emit('channel_status', data);
+    });
+
+    this.socket.on('global_mod_action', (data) => {
+      this.emit('global_mod_action', data);
+    });
+
+    this.socket.on('mps_update', (data) => {
+      this.emit('mps_update', data);
+    });
+
+    this.socket.on('channel_mps', (data) => {
+      this.emit('channel_mps', data);
+    });
+
     this.socket.on('subscribed', (data) => {
       console.log('Subscribed to channels:', data.channels);
+    });
+
+    this.socket.on('subscribed_global', () => {
+      console.log('Subscribed to global updates');
     });
 
     this.socket.on('pong', () => {
@@ -87,6 +118,7 @@ class WebSocketService {
     }
     this.subscribedChannels.clear();
     this.listeners.clear();
+    this.isSubscribedGlobal = false;
   }
 
   subscribe(channels) {
@@ -107,6 +139,26 @@ class WebSocketService {
     }
     
     channelList.forEach(c => this.subscribedChannels.delete(c.toLowerCase()));
+  }
+
+  /**
+   * Subscribe to global events (stats updates, channel status, global mod actions)
+   */
+  subscribeGlobal() {
+    if (this.socket?.connected && !this.isSubscribedGlobal) {
+      this.socket.emit('subscribe_global');
+      this.isSubscribedGlobal = true;
+    }
+  }
+
+  /**
+   * Unsubscribe from global events
+   */
+  unsubscribeGlobal() {
+    if (this.socket?.connected && this.isSubscribedGlobal) {
+      this.socket.emit('unsubscribe_global');
+      this.isSubscribedGlobal = false;
+    }
   }
 
   on(event, callback) {

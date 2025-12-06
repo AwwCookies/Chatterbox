@@ -13,15 +13,19 @@ class Message {
       timestamp,
       messageId,
       badges = [],
-      emotes = []
+      emotes = [],
+      replyToMessageId = null,
+      replyToUserId = null,
+      replyToUsername = null,
+      mentionedUsers = null
     } = messageData;
     
     const result = await query(
-      `INSERT INTO messages (channel_id, user_id, message_text, timestamp, message_id, badges, emotes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO messages (channel_id, user_id, message_text, timestamp, message_id, badges, emotes, reply_to_message_id, reply_to_user_id, reply_to_username, mentioned_users)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        ON CONFLICT (message_id) DO NOTHING
        RETURNING *`,
-      [channelId, userId, messageText, timestamp, messageId, JSON.stringify(badges), JSON.stringify(emotes)]
+      [channelId, userId, messageText, timestamp, messageId, JSON.stringify(badges), JSON.stringify(emotes), replyToMessageId, replyToUserId, replyToUsername, mentionedUsers ? JSON.stringify(mentionedUsers) : null]
     );
     
     return result.rows[0];
@@ -40,8 +44,8 @@ class Message {
       const insertedMessages = [];
       for (const msg of messages) {
         const result = await client.query(
-          `INSERT INTO messages (channel_id, user_id, message_text, timestamp, message_id, badges, emotes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `INSERT INTO messages (channel_id, user_id, message_text, timestamp, message_id, badges, emotes, reply_to_message_id, reply_to_user_id, reply_to_username, mentioned_users)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
            ON CONFLICT (message_id) DO NOTHING
            RETURNING *`,
           [
@@ -51,7 +55,11 @@ class Message {
             msg.timestamp,
             msg.messageId,
             JSON.stringify(msg.badges || []),
-            JSON.stringify(msg.emotes || [])
+            JSON.stringify(msg.emotes || []),
+            msg.replyToMessageId || null,
+            msg.replyToUserId || null,
+            msg.replyToUsername || null,
+            msg.mentionedUsers ? JSON.stringify(msg.mentionedUsers) : null
           ]
         );
         if (result.rows[0]) {
@@ -65,6 +73,7 @@ class Message {
     } catch (error) {
       await client.query('ROLLBACK');
       logger.error('Bulk insert failed:', error.message);
+      logger.error('Bulk insert error details:', { code: error.code, detail: error.detail, hint: error.hint });
       throw error;
     } finally {
       client.release();

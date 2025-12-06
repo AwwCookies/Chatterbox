@@ -5,6 +5,15 @@ class WebSocketService {
   constructor() {
     this.io = null;
     this.clientSubscriptions = new Map(); // socketId -> Set of channels
+    this.stats = {
+      totalMessages: 0,
+      totalUsers: 0,
+      activeChannels: 0,
+    };
+    // Message rate tracking
+    this.messageCount = 0;
+    this.channelMessageCounts = new Map(); // channelName -> count
+    this.mpsInterval = null;
   }
 
   /**
@@ -17,7 +26,48 @@ class WebSocketService {
     });
 
     this.setupConnectionHandlers();
+    this.startMpsTracking();
     logger.info('WebSocket service initialized');
+  }
+
+  /**
+   * Start broadcasting messages per second to global subscribers
+   */
+  startMpsTracking() {
+    this.mpsInterval = setInterval(() => {
+      const mps = this.messageCount;
+      this.messageCount = 0;
+      
+      // Build channel MPS data
+      const channelMps = {};
+      for (const [channel, count] of this.channelMessageCounts) {
+        channelMps[channel] = count;
+      }
+      this.channelMessageCounts.clear();
+      
+      // Broadcast global MPS to global subscribers
+      this.broadcastGlobal('mps_update', { mps, channelMps });
+      
+      // Broadcast channel-specific MPS to each channel's subscribers
+      for (const [channel, count] of Object.entries(channelMps)) {
+        this.io?.to(`channel:${channel}`).emit('channel_mps', { 
+          channel, 
+          mps: count,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }, 1000);
+  }
+
+  /**
+   * Increment message counter (call this when a message is received)
+   */
+  trackMessage(channelName = null) {
+    this.messageCount++;
+    if (channelName) {
+      const current = this.channelMessageCounts.get(channelName) || 0;
+      this.channelMessageCounts.set(channelName, current + 1);
+    }
   }
 
   /**
@@ -40,6 +90,18 @@ class WebSocketService {
         });
 
         socket.emit('subscribed', { channels: channels.map(c => c.toLowerCase()) });
+      });
+
+      // Handle global subscription for dashboard updates
+      socket.on('subscribe_global', () => {
+        socket.join('global');
+        logger.debug(`Client ${socket.id} subscribed to global updates`);
+        socket.emit('subscribed_global');
+      });
+
+      socket.on('unsubscribe_global', () => {
+        socket.leave('global');
+        logger.debug(`Client ${socket.id} unsubscribed from global updates`);
       });
 
       // Handle channel unsubscription
@@ -122,6 +184,37 @@ class WebSocketService {
    */
   broadcastToAll(event, data) {
     this.io?.emit(event, data);
+  }
+
+  /**
+   * Broadcast to global subscribers only (dashboard clients)
+   */
+  broadcastGlobal(event, data) {
+    this.io?.to('global').emit(event, {
+      ...data,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  /**
+   * Broadcast stats update to global subscribers
+   */
+  broadcastStatsUpdate(stats) {
+    this.broadcastGlobal('stats_update', stats);
+  }
+
+  /**
+   * Broadcast channel status change (live/offline)
+   */
+  broadcastChannelStatus(channelData) {
+    this.broadcastGlobal('channel_status', channelData);
+  }
+
+  /**
+   * Broadcast mod action to global subscribers (for dashboard mod feed)
+   */
+  broadcastGlobalModAction(actionData) {
+    this.broadcastGlobal('global_mod_action', actionData);
   }
 }
 

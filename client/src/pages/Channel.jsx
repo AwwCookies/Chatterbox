@@ -2,14 +2,14 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useChannel, useChannelStats, useChannelTopUsers } from '../hooks/useChannels';
 import { useInfiniteChannelMessages, useInfiniteChannelModActions, useInfiniteChannelLinks } from '../hooks/useInfiniteData';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { useWebSocket, useGlobalWebSocket, useChannelMps } from '../hooks/useWebSocket';
 import { useEmotes } from '../hooks/useEmotes';
 import { useProfileCardStore } from '../stores/profileCardStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useChannelSettingsStore } from '../stores/channelSettingsStore';
 import { useMobile } from '../hooks/useMobile';
 import { MobileChannel } from './mobile';
-import { formatDateTime, formatNumber, formatRelative } from '../utils/formatters';
+import { formatDateTime, formatNumber, formatRelative, formatDuration } from '../utils/formatters';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import InfiniteScroll, { InfiniteScrollLoader, InfiniteScrollEmpty } from '../components/common/InfiniteScroll';
 import LiveFeed from '../components/chat/LiveFeed';
@@ -19,6 +19,7 @@ import LinksTab from '../components/chat/LinksTab';
 import MessageList from '../components/chat/MessageList';
 import ModActionList from '../components/moderation/ModActionList';
 import ChannelSettingsTab from '../components/channel/ChannelSettingsTab';
+import ChannelAnalyticsTab from '../components/chat/ChannelAnalyticsTab';
 import { 
   Radio, 
   Hash, 
@@ -35,8 +36,13 @@ import {
   ChevronLeft,
   ChevronRight,
   Link as LinkIcon,
-  Settings
+  Settings,
+  BarChart3,
+  Eye,
+  Gamepad2,
+  Zap
 } from 'lucide-react';
+import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 
 function Channel() {
   const { name } = useParams();
@@ -61,6 +67,28 @@ function Channel() {
   const { data: channel, isLoading: channelLoading, error: channelError } = useChannel(name);
   const { data: statsData, isLoading: statsLoading } = useChannelStats(name);
   const { data: topUsersData, isLoading: topUsersLoading } = useChannelTopUsers(name, { limit: 10 });
+
+  // Subscribe to global WebSocket for real-time channel status updates
+  const { channelStatuses } = useGlobalWebSocket();
+  
+  // Get channel-specific MPS data
+  const { mps: channelMps, mpsHistory: channelMpsHistory, peakMps: channelPeakMps } = useChannelMps(name);
+  
+  // Merge API data with real-time WebSocket updates
+  const liveChannelStatus = channelStatuses[name?.toLowerCase()] || {};
+  const channelData = useMemo(() => {
+    if (!channel) return null;
+    return {
+      ...channel,
+      // Override with real-time data if available
+      is_live: liveChannelStatus.is_live ?? channel.is_live,
+      viewer_count: liveChannelStatus.viewer_count ?? channel.viewer_count,
+      stream_title: liveChannelStatus.stream_title ?? channel.stream_title,
+      game_name: liveChannelStatus.game_name ?? channel.game_name,
+      started_at: liveChannelStatus.started_at ?? channel.started_at,
+      profile_image_url: liveChannelStatus.profile_image_url ?? channel.profile_image_url,
+    };
+  }, [channel, liveChannelStatus]);
 
   // Infinite scroll data
   const {
@@ -120,6 +148,14 @@ function Channel() {
     }
   }, [channel, loadChannelEmotes]);
 
+  // Force re-render every minute to update uptime display
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!channelData?.is_live) return;
+    const interval = setInterval(() => setTick(t => t + 1), 60000);
+    return () => clearInterval(interval);
+  }, [channelData?.is_live]);
+
   // Parse mod action stats
   const modStats = useMemo(() => {
     if (!statsData?.stats?.mod_actions) return { bans: 0, timeouts: 0, deletes: 0 };
@@ -155,32 +191,95 @@ function Channel() {
 
   const stats = statsData?.stats || {};
 
+  // Calculate stream uptime
+  const getStreamUptime = () => {
+    if (!channelData?.started_at) return null;
+    const started = new Date(channelData.started_at);
+    const now = new Date();
+    const diffMs = now - started;
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+  };
+
   return (
     <div className="space-y-6">
       {/* Channel Header */}
       <div className="bg-twitch-gray rounded-lg p-6 border border-gray-700">
         <div className="flex items-start justify-between">
           <div className="flex items-start space-x-4">
-            <div className="p-4 bg-twitch-purple rounded-full">
-              <Hash className="w-8 h-8 text-white" />
-            </div>
-            <div>
+            {/* Profile Picture */}
+            {channelData.profile_image_url ? (
+              <img 
+                src={channelData.profile_image_url} 
+                alt={channelData.display_name || channelData.name}
+                className={`w-16 h-16 rounded-full border-2 ${
+                  channelData.is_live ? 'border-red-500 ring-2 ring-red-500/50' : 'border-gray-600'
+                }`}
+              />
+            ) : (
+              <div className={`p-4 rounded-full ${channelData.is_live ? 'bg-red-500' : 'bg-twitch-purple'}`}>
+                <Hash className="w-8 h-8 text-white" />
+              </div>
+            )}
+            
+            <div className="flex-1">
               <div className="flex items-center space-x-3">
                 <h1 className="text-2xl font-bold text-white">
-                  #{channel.display_name || channel.name}
+                  {channelData.display_name || channelData.name}
                 </h1>
+                {channelData.is_live && (
+                  <span className="flex items-center space-x-1 px-2 py-0.5 rounded bg-red-500 text-white text-xs font-medium animate-pulse">
+                    <span className="w-2 h-2 rounded-full bg-white" />
+                    <span>LIVE</span>
+                  </span>
+                )}
                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                  channel.is_active 
+                  channelData.is_active 
                     ? 'bg-green-500/20 text-green-400' 
                     : 'bg-red-500/20 text-red-400'
                 }`}>
-                  {channel.is_active ? 'Active' : 'Inactive'}
+                  {channelData.is_active ? 'Active' : 'Inactive'}
                 </span>
               </div>
               
+              {/* Stream Info (when live) */}
+              {channelData.is_live && (
+                <div className="mt-2 space-y-1">
+                  {channelData.stream_title && (
+                    <p className="text-white text-sm line-clamp-1" title={channelData.stream_title}>
+                      {channelData.stream_title}
+                    </p>
+                  )}
+                  <div className="flex items-center space-x-4 text-sm text-gray-400">
+                    {channelData.game_name && (
+                      <span className="flex items-center space-x-1">
+                        <Gamepad2 className="w-3.5 h-3.5" />
+                        <span>{channelData.game_name}</span>
+                      </span>
+                    )}
+                    {channelData.viewer_count != null && (
+                      <span className="flex items-center space-x-1 text-red-400">
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>{formatNumber(channelData.viewer_count)} viewers</span>
+                      </span>
+                    )}
+                    {channelData.started_at && (
+                      <span className="flex items-center space-x-1">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>Uptime: {getStreamUptime()}</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+              
               <div className="flex items-center space-x-4 mt-2">
                 <a 
-                  href={`https://twitch.tv/${channel.name}`}
+                  href={`https://twitch.tv/${channelData.name}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center space-x-1 text-twitch-purple hover:underline text-sm"
@@ -191,7 +290,7 @@ function Channel() {
                 <span className="text-gray-500">•</span>
                 <span className={`flex items-center space-x-1 text-sm ${isConnected ? 'text-green-400' : 'text-red-400'}`}>
                   <Radio className="w-3 h-3" />
-                  <span>{isConnected ? 'Live Connected' : 'Connecting...'}</span>
+                  <span>{isConnected ? 'IRC Connected' : 'Connecting...'}</span>
                 </span>
               </div>
             </div>
@@ -251,13 +350,43 @@ function Channel() {
           </div>
         </div>
 
-        <div className="bg-twitch-gray rounded-lg p-4 border border-gray-700">
-          <div className="flex items-center space-x-3">
-            <Activity className="w-5 h-5 text-green-400" />
-            <div>
-              <p className="text-xl font-bold text-white">{liveMessages.length}</p>
-              <p className="text-xs text-gray-400">Live Queue</p>
+        {/* Live MPS with mini sparkline */}
+        <div className="bg-twitch-gray rounded-lg p-3 border border-gray-700 relative overflow-hidden">
+          <div className="flex items-center justify-between relative z-10">
+            <div className="flex items-center space-x-2">
+              <Zap className={`w-5 h-5 ${channelMps > 0 ? 'text-yellow-400 animate-pulse' : 'text-gray-500'}`} />
+              <div>
+                <p className={`text-xl font-bold ${channelMps > 0 ? 'text-white' : 'text-gray-400'}`}>
+                  {channelMps.toFixed(1)}
+                </p>
+                <p className="text-xs text-gray-400">msg/sec</p>
+              </div>
             </div>
+            <div className="text-right">
+              <p className="text-xs text-gray-500">peak</p>
+              <p className="text-sm font-semibold text-twitch-purple">{channelPeakMps.toFixed(1)}</p>
+            </div>
+          </div>
+          {/* Mini sparkline background */}
+          <div className="absolute inset-0 opacity-30">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={channelMpsHistory} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="channelMpsGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#9147ff" stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor="#9147ff" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <Area 
+                  type="monotone" 
+                  dataKey="value" 
+                  stroke="#9147ff" 
+                  strokeWidth={1}
+                  fill="url(#channelMpsGradient)" 
+                  isAnimationActive={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
@@ -268,6 +397,7 @@ function Channel() {
           {[
             { id: 'live', label: 'Live Feed', icon: Radio },
             { id: 'messages', label: 'Message History', icon: MessageSquare },
+            { id: 'analytics', label: 'Analytics', icon: BarChart3 },
             { id: 'links', label: 'Links', icon: LinkIcon, count: totalLinks },
             { id: 'moderation', label: 'Mod Actions', icon: Shield },
             { id: 'users', label: 'Top Users', icon: TrendingUp },
@@ -357,6 +487,12 @@ function Channel() {
                   />
                 )}
               </div>
+            </div>
+          )}
+
+          {activeTab === 'analytics' && (
+            <div className="col-span-full">
+              <ChannelAnalyticsTab channelName={name} />
             </div>
           )}
 

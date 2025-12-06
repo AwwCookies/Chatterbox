@@ -5,16 +5,24 @@ import Sidebar from './components/layout/Sidebar'
 import Home from './pages/Home'
 import Messages from './pages/Messages'
 import User from './pages/User'
+import Users from './pages/Users'
 import Channel from './pages/Channel'
 import Moderation from './pages/Moderation'
 import Live from './pages/Live'
 import Channels from './pages/Channels'
+import ServerAdmin from './pages/ServerAdmin'
+import ApiExplorer from './pages/ApiExplorer'
+import Login from './pages/Login'
+import AuthCallback from './pages/AuthCallback'
+import Following from './pages/Following'
+import Profile from './pages/Profile'
 import ProfileCardContainer from './components/user/ProfileCardContainer'
+import ThreadCardContainer from './components/chat/ThreadCardContainer'
 import ToastContainer from './components/common/ToastContainer'
 import CommandPalette from './components/common/CommandPalette'
 import ErrorBoundary from './components/common/ErrorBoundary'
 import SettingsModal from './components/common/SettingsModal'
-import ApiDebugPanel from './components/common/ApiDebugPanel'
+import AlphaDisclaimerModal from './components/common/AlphaDisclaimerModal'
 import { useEmotes } from './hooks/useEmotes'
 import { useSettingsStore } from './stores/settingsStore'
 import { useUIStore } from './stores/uiStore'
@@ -29,8 +37,6 @@ function App() {
   const accentColor = useSettingsStore(state => state.accentColor);
   const settingsModalOpen = useUIStore(state => state.settingsModalOpen);
   const closeSettingsModal = useUIStore(state => state.closeSettingsModal);
-  const apiDebugPanelOpen = useUIStore(state => state.apiDebugPanelOpen);
-  const closeApiDebugPanel = useUIStore(state => state.closeApiDebugPanel);
   
   // Mobile detection and state
   const { isMobile, isTablet } = useMobile();
@@ -96,23 +102,30 @@ function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-twitch-dark text-twitch-light mobile-safe-area">
+    <div className="min-h-screen bg-twitch-dark text-twitch-light mobile-safe-area overflow-x-hidden">
       {/* Desktop Layout */}
       {!isMobile && (
         <>
           <Navbar />
           <div className="flex pt-14">
             <Sidebar />
-            <main className={`flex-1 p-6 transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
+            <main className={`flex-1 p-6 transition-all duration-300 min-w-0 ${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
               <ErrorBoundary>
                 <Routes>
                   <Route path="/" element={<Home />} />
                   <Route path="/messages" element={<Messages />} />
+                  <Route path="/users" element={<Users />} />
                   <Route path="/user/:username" element={<User />} />
                   <Route path="/channel/:name" element={<Channel />} />
                   <Route path="/moderation" element={<Moderation />} />
                   <Route path="/live" element={<Live />} />
                   <Route path="/channels" element={<Channels />} />
+                  <Route path="/admin" element={<ServerAdmin />} />
+                  <Route path="/api-explorer" element={<ApiExplorer />} />
+                  <Route path="/login" element={<Login />} />
+                  <Route path="/auth/callback" element={<AuthCallback />} />
+                  <Route path="/following" element={<Following />} />
+                  <Route path="/profile" element={<Profile />} />
                 </Routes>
               </ErrorBoundary>
             </main>
@@ -137,6 +150,10 @@ function App() {
                 <Route path="/moderation" element={<Moderation isMobile />} />
                 <Route path="/live" element={<Live isMobile />} />
                 <Route path="/channels" element={<Channels isMobile />} />
+                <Route path="/login" element={<Login isMobile />} />
+                <Route path="/auth/callback" element={<AuthCallback />} />
+                <Route path="/following" element={<Following isMobile />} />
+                <Route path="/profile" element={<Profile isMobile />} />
               </Routes>
             </ErrorBoundary>
           </main>
@@ -154,10 +171,11 @@ function App() {
       
       {/* Global components */}
       <ProfileCardContainer />
+      <ThreadCardContainer />
       <ToastContainer />
       {!isMobile && <CommandPalette />}
       <SettingsModal isOpen={settingsModalOpen} onClose={closeSettingsModal} />
-      <ApiDebugPanel isOpen={apiDebugPanelOpen} onClose={closeApiDebugPanel} />
+      <AlphaDisclaimerModal />
     </div>
   )
 }

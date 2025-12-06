@@ -97,6 +97,13 @@ body {
   font-size: 17px;
 }
 
+/* Message text overflow handling for long unbreakable strings */
+.message-text {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+
 /* Compact mode */
 .compact-mode .message-item {
   padding: 0.375rem 0.75rem;
@@ -211,6 +218,16 @@ body {
 
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out;
+}
+
+/* Pulse once animation for live messages */
+@keyframes pulse-once {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-pulse-once {
+  animation: pulse-once 1s ease-in-out 2;
 }
 
 /* Line clamp utilities */

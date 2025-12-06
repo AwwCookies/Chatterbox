@@ -22,6 +22,16 @@ import logger from './utils/logger.js';
 import ArchiveService from './services/archiveService.js';
 import WebSocketService from './services/websocketService.js';
 import TwitchService from './services/twitchService.js';
+import twitchApiService from './services/twitchApiService.js';
+import ConfigService from './services/configService.js';
+
+// Middleware
+import { 
+  trafficAnalytics, 
+  ipBlocker, 
+  perIpRateLimiter,
+  initializeTrafficTracking 
+} from './middleware/trafficMiddleware.js';
 
 // Routes
 import messagesRouter from './routes/messages.js';
@@ -29,6 +39,8 @@ import usersRouter from './routes/users.js';
 import modActionsRouter from './routes/modActions.js';
 import channelsRouter, { setTwitchService } from './routes/channels.js';
 import utilsRouter from './routes/utils.js';
+import adminRouter from './routes/admin.js';
+import oauthRouter from './routes/oauth.js';
 
 const app = express();
 const httpServer = createServer(app);
@@ -70,7 +82,12 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Rate limiting
+// Traffic middleware (IP blocking, analytics, per-IP rate limiting)
+app.use('/api', ipBlocker);
+app.use('/api', trafficAnalytics);
+app.use('/api', perIpRateLimiter);
+
+// Global rate limiting (backup)
 const limiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 10000, // 10000 requests per minute
@@ -88,12 +105,18 @@ app.use((req, res, next) => {
 const archiveService = new ArchiveService();
 const websocketService = new WebSocketService();
 
+// Make services globally accessible for admin routes
+global.archiveService = archiveService;
+global.websocketService = websocketService;
+
 // API Routes
 app.use('/api/messages', messagesRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/mod-actions', modActionsRouter);
 app.use('/api/channels', channelsRouter);
 app.use('/api/utils', utilsRouter);
+app.use('/api/admin', adminRouter);
+app.use('/api/oauth', oauthRouter);
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
@@ -257,10 +280,19 @@ app.get('/api/stats', async (req, res) => {
   try {
     const { query } = await import('./config/database.js');
     
-    const [messageCount, userCount, channelCount] = await Promise.all([
+    const [messageCount, userCount, channelCount, messagesLast24h] = await Promise.all([
       query('SELECT COUNT(*) FROM messages'),
       query('SELECT COUNT(*) FROM users'),
-      query('SELECT COUNT(*) FROM channels WHERE is_active = TRUE')
+      query('SELECT COUNT(*) FROM channels WHERE is_active = TRUE'),
+      query(`
+        SELECT 
+          date_trunc('hour', timestamp) as hour,
+          COUNT(*) as count
+        FROM messages
+        WHERE timestamp > NOW() - INTERVAL '24 hours'
+        GROUP BY date_trunc('hour', timestamp)
+        ORDER BY hour ASC
+      `)
     ]);
 
     res.json({
@@ -268,7 +300,11 @@ app.get('/api/stats', async (req, res) => {
       totalUsers: parseInt(userCount.rows[0].count),
       activeChannels: parseInt(channelCount.rows[0].count),
       connectedClients: websocketService.getConnectedClients(),
-      archiveBuffer: archiveService.getStats()
+      archiveBuffer: archiveService.getStats(),
+      messagesLast24h: messagesLast24h.rows.map(row => ({
+        hour: row.hour,
+        count: parseInt(row.count)
+      }))
     });
   } catch (error) {
     logger.error('Error fetching stats:', error.message);
@@ -323,11 +359,34 @@ const startServer = async () => {
       throw new Error('Database connection failed');
     }
 
+    // Initialize config service (creates tables if needed)
+    await ConfigService.initialize();
+    
+    // Initialize traffic tracking (loads blocked IPs, etc.)
+    await initializeTrafficTracking();
+
     // Initialize WebSocket
     websocketService.initialize(httpServer, corsOptions);
 
     // Wire up websocket service to archive service for flush notifications
     archiveService.setWebsocketService(websocketService);
+
+    // Set up stats callback for real-time stats broadcasting
+    archiveService.setStatsCallback(async () => {
+      const { query } = await import('./config/database.js');
+      const [messageCount, userCount, channelCount] = await Promise.all([
+        query('SELECT COUNT(*) FROM messages'),
+        query('SELECT COUNT(*) FROM users'),
+        query('SELECT COUNT(*) FROM channels WHERE is_active = TRUE'),
+      ]);
+      return {
+        totalMessages: parseInt(messageCount.rows[0].count),
+        totalUsers: parseInt(userCount.rows[0].count),
+        activeChannels: parseInt(channelCount.rows[0].count),
+        connectedClients: websocketService.getConnectedClients(),
+        archiveBuffer: archiveService.getStats(),
+      };
+    });
 
     // Initialize Twitch service
     const twitchService = new TwitchService(archiveService, websocketService);
@@ -339,6 +398,61 @@ const startServer = async () => {
 
     // Connect to Twitch IRC
     await twitchService.initialize();
+
+    // Start periodic stream status updater (broadcasts changes via WebSocket)
+    let lastStreamStatuses = {};
+    const updateStreamStatuses = async () => {
+      try {
+        const channels = await Channel.getAll(true); // Active channels only
+        const channelNames = channels.map(c => c.name);
+        
+        if (channelNames.length === 0) return;
+        
+        // Force refresh stream status
+        await twitchApiService.refreshStreamStatus(channelNames);
+        const currentStatuses = twitchApiService.getStreamStatuses(channelNames);
+        
+        // Get user profiles for profile pictures
+        const userProfiles = await twitchApiService.getUserProfiles(channelNames);
+        
+        // Check for changes and broadcast
+        for (const channel of channels) {
+          const nameLower = channel.name.toLowerCase();
+          const current = currentStatuses[nameLower] || {};
+          const previous = lastStreamStatuses[nameLower] || {};
+          const profile = userProfiles[nameLower] || {};
+          
+          // Broadcast if live status changed or viewer count changed significantly
+          const liveChanged = current.isLive !== previous.isLive;
+          const viewersChanged = current.isLive && Math.abs((current.viewerCount || 0) - (previous.viewerCount || 0)) > 100;
+          
+          if (liveChanged || viewersChanged || !lastStreamStatuses[nameLower]) {
+            websocketService.broadcastChannelStatus({
+              name: channel.name,
+              display_name: channel.display_name,
+              is_live: current.isLive || false,
+              viewer_count: current.viewerCount || null,
+              stream_title: current.title || null,
+              game_name: current.gameName || null,
+              started_at: current.startedAt || null,
+              profile_image_url: profile.profileImageUrl || null,
+            });
+          }
+        }
+        
+        lastStreamStatuses = currentStatuses;
+      } catch (error) {
+        logger.error('Error updating stream statuses:', error.message);
+      }
+    };
+    
+    // Import Channel model for the updater
+    const Channel = (await import('./models/Channel.js')).default;
+    
+    // Initial update after 5 seconds
+    setTimeout(updateStreamStatuses, 5000);
+    // Then update every 60 seconds
+    setInterval(updateStreamStatuses, 60000);
 
     // Start HTTP server
     httpServer.listen(PORT, () => {

@@ -13,10 +13,15 @@
 - [REST API Endpoints](#rest-api-endpoints)
   - [Messages](#messages)
   - [Users](#users)
+  - [User Analytics](#user-analytics)
   - [Mod Actions](#mod-actions)
   - [Channels](#channels)
   - [Utilities](#utilities)
   - [System](#system)
+  - [Admin](#admin)
+  - [OAuth Authentication](#oauth-authentication-user-login)
+  - [User Data Requests](#user-data-requests)
+  - [Admin User Request Management](#admin-user-request-management)
 - [WebSocket API](#websocket-api)
 - [Error Handling](#error-handling)
 - [Examples](#examples)
@@ -83,6 +88,8 @@ Most read endpoints (GET requests) are **publicly accessible** without authentic
 - `PATCH /api/channels/:name` - Update channel
 - `DELETE /api/channels/:name` - Remove channel
 - `POST /api/channels/:name/rejoin` - Rejoin IRC
+- `GET /api/admin/*` - All admin endpoints
+- `POST /api/admin/*` - All admin actions
 
 ### Using API Key Authentication
 
@@ -392,6 +399,137 @@ Retrieve a specific message by its database ID.
 
 ---
 
+#### Get Message Thread
+`GET /api/messages/:messageId/thread`
+
+Retrieve a message thread containing the parent message and all replies.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `messageId` | string | Twitch message ID (UUID) |
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `maxReplies` | integer | No | Maximum replies to return (default: 100) |
+
+**Response:**
+```json
+{
+  "parent": {
+    "message_id": "abc123-def456",
+    "message_text": "What do you think about this?",
+    "timestamp": "2025-12-04T15:45:30.123Z",
+    "username": "streamer123",
+    "user_display_name": "Streamer123",
+    "channel_name": "pokimane",
+    "is_parent": true
+  },
+  "replies": [
+    {
+      "message_id": "def456-ghi789",
+      "message_text": "@streamer123 I agree!",
+      "timestamp": "2025-12-04T15:45:45.123Z",
+      "username": "chatuser123",
+      "user_display_name": "ChatUser123",
+      "channel_name": "pokimane",
+      "is_parent": false
+    }
+  ],
+  "totalReplies": 1
+}
+```
+
+**Errors:**
+- `404`: Message thread not found
+
+---
+
+#### Get User Mentions
+`GET /api/messages/mentions/:username`
+
+Retrieve messages that mention a specific user with @username.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `username` | string | Username to find mentions for |
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `channelId` | integer | No | Filter by channel ID |
+| `daysBack` | integer | No | Days of history to search (default: 30) |
+| `maxResults` | integer | No | Maximum results (default: 100) |
+
+**Response:**
+```json
+{
+  "mentions": [
+    {
+      "message_id": "abc123-def456",
+      "message_text": "@chatuser123 great point!",
+      "timestamp": "2025-12-04T15:45:30.123Z",
+      "username": "streamer123",
+      "user_display_name": "Streamer123",
+      "channel_name": "pokimane",
+      "mentioned_users": ["chatuser123"]
+    }
+  ],
+  "total": 1
+}
+```
+
+---
+
+#### Get Replies to User
+`GET /api/messages/replies/:userId`
+
+Retrieve all messages that are direct replies to messages by a specific user.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `userId` | integer | User's database ID |
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `channelId` | integer | No | Filter by channel ID |
+| `limit` | integer | No | Results per page (default: 50) |
+| `offset` | integer | No | Skip N results |
+
+**Response:**
+```json
+{
+  "replies": [
+    {
+      "id": 12345,
+      "message_text": "@streamer123 I love this stream!",
+      "timestamp": "2025-12-04T15:45:30.123Z",
+      "username": "chatuser123",
+      "user_display_name": "ChatUser123",
+      "channel_name": "pokimane",
+      "parent_message_text": "Welcome to the stream!",
+      "parent_username": "streamer123",
+      "parent_display_name": "Streamer123"
+    }
+  ],
+  "total": 50,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+---
+
 ### Users
 
 #### List Users
@@ -405,7 +543,8 @@ Retrieve users with optional search/filter.
 |-----------|------|----------|-------------|
 | `limit` | integer | No | Results per page (default: 50) |
 | `offset` | integer | No | Skip N results |
-| `search` | string | No | Search username/display name |
+| `search` | string | No | Search username/display name (fuzzy match) |
+| `username` | string | No | Exact username match |
 | `channel` | string | No | Filter users active in channel |
 
 **Response:**
@@ -418,9 +557,85 @@ Retrieve users with optional search/filter.
       "username": "chatuser123",
       "display_name": "ChatUser123",
       "first_seen": "2025-01-15T10:30:00.000Z",
-      "last_seen": "2025-12-04T15:45:00.000Z"
+      "last_seen": "2025-12-04T15:45:00.000Z",
+      "is_blocked": false,
+      "message_count": 1250,
+      "timeout_count": 2,
+      "ban_count": 0
     }
   ]
+}
+```
+
+---
+
+#### Get Top Users
+`GET /api/users/top`
+
+Get users sorted by message count.
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `limit` | integer | No | Results per page (default: 50) |
+| `offset` | integer | No | Skip N results |
+| `channelId` | integer | No | Filter by channel ID |
+| `since` | ISO date | No | Start date filter |
+| `until` | ISO date | No | End date filter |
+
+**Response:**
+```json
+{
+  "users": [
+    {
+      "id": 42,
+      "username": "chatuser123",
+      "display_name": "ChatUser123",
+      "twitch_id": "87654321",
+      "first_seen": "2025-01-15T10:30:00.000Z",
+      "last_seen": "2025-12-04T15:45:00.000Z",
+      "is_blocked": false,
+      "message_count": 1250,
+      "timeout_count": 2,
+      "ban_count": 0
+    }
+  ],
+  "total": 5000,
+  "hasMore": true
+}
+```
+
+---
+
+#### Get Blocked Users
+`GET /api/users/blocked`
+
+Get all blocked users. **Requires authentication.**
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `limit` | integer | No | Results per page (default: 50) |
+| `offset` | integer | No | Skip N results |
+
+**Response:**
+```json
+{
+  "users": [
+    {
+      "id": 42,
+      "username": "baduser",
+      "display_name": "BadUser",
+      "twitch_id": "12345678",
+      "is_blocked": true,
+      "blocked_at": "2025-12-01T10:00:00.000Z",
+      "blocked_reason": "Spam"
+    }
+  ],
+  "total": 10,
+  "hasMore": false
 }
 ```
 
@@ -596,6 +811,346 @@ Get detailed statistics for a user.
 
 ---
 
+#### Export User Data
+`GET /api/users/:username/export`
+
+Export all data for a user including messages, mod actions, and profile. **Requires authentication.**
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `username` | string | Username |
+
+**Response:**
+```json
+{
+  "user": {
+    "id": 42,
+    "username": "chatuser123",
+    "display_name": "ChatUser123",
+    "twitch_id": "87654321",
+    "first_seen": "2025-01-15T10:30:00.000Z",
+    "last_seen": "2025-12-04T15:45:00.000Z",
+    "is_blocked": false,
+    "notes": "Friendly chatter"
+  },
+  "stats": {
+    "total_messages": 1250,
+    "total_timeouts": 2,
+    "total_bans": 0
+  },
+  "messages": [
+    {
+      "id": 123,
+      "content": "Hello everyone!",
+      "timestamp": "2025-12-04T15:45:00.000Z",
+      "channel_name": "pokimane"
+    }
+  ],
+  "modActions": [
+    {
+      "id": 1,
+      "action_type": "timeout",
+      "channel_name": "pokimane",
+      "timestamp": "2025-12-01T10:00:00.000Z"
+    }
+  ],
+  "exportedAt": "2025-12-04T16:00:00.000Z"
+}
+```
+
+---
+
+#### Block User
+`POST /api/users/:username/block`
+
+Block a user from being logged. Their future messages will not be stored. **Requires authentication.**
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `username` | string | Username |
+
+**Request Body:**
+```json
+{
+  "reason": "Spam"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "User blocked successfully",
+  "user": {
+    "id": 42,
+    "username": "chatuser123",
+    "is_blocked": true,
+    "blocked_at": "2025-12-04T16:00:00.000Z",
+    "blocked_reason": "Spam"
+  }
+}
+```
+
+---
+
+#### Unblock User
+`POST /api/users/:username/unblock`
+
+Unblock a previously blocked user. **Requires authentication.**
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `username` | string | Username |
+
+**Response:**
+```json
+{
+  "message": "User unblocked successfully",
+  "user": {
+    "id": 42,
+    "username": "chatuser123",
+    "is_blocked": false
+  }
+}
+```
+
+---
+
+#### Update User Notes
+`PATCH /api/users/:username/notes`
+
+Update admin notes for a user. **Requires authentication.**
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `username` | string | Username |
+
+**Request Body:**
+```json
+{
+  "notes": "Friendly regular viewer"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Notes updated successfully",
+  "user": {
+    "id": 42,
+    "username": "chatuser123",
+    "notes": "Friendly regular viewer"
+  }
+}
+```
+
+---
+
+#### Delete User Messages
+`DELETE /api/users/:username/messages`
+
+Delete all messages from a user. **Requires authentication.**
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `username` | string | Username |
+
+**Response:**
+```json
+{
+  "message": "Deleted 1250 messages for user chatuser123",
+  "deletedCount": 1250
+}
+```
+
+---
+
+#### Delete User
+`DELETE /api/users/:username`
+
+Delete a user and all their data (messages, mod actions). **Requires authentication.**
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `username` | string | Username |
+
+**Response:**
+```json
+{
+  "message": "User chatuser123 and all associated data deleted successfully",
+  "deleted": {
+    "messages": 1250,
+    "modActionsAsTarget": 5,
+    "modActionsAsModerator": 0
+  }
+}
+```
+
+---
+
+### User Analytics
+
+#### Get Activity Patterns
+`GET /api/users/:username/analytics/activity`
+
+Get hourly and daily activity patterns showing when a user is most active.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `username` | string | Username |
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `days` | integer | No | Days to analyze (default: 30, max: 365) |
+
+**Response:**
+```json
+{
+  "user": { "username": "chatuser123", "display_name": "ChatUser123" },
+  "period": "30 days",
+  "hourly": [
+    { "hour": 0, "messageCount": 45 },
+    { "hour": 14, "messageCount": 250 },
+    { "hour": 15, "messageCount": 310 }
+  ],
+  "weekday": [
+    { "day": 0, "messageCount": 500 },
+    { "day": 1, "messageCount": 450 }
+  ],
+  "daily": [
+    { "day": "2025-12-04T00:00:00.000Z", "messageCount": 125 },
+    { "day": "2025-12-03T00:00:00.000Z", "messageCount": 98 }
+  ]
+}
+```
+
+---
+
+#### Get Channel Breakdown
+`GET /api/users/:username/analytics/channels`
+
+Get breakdown of user's activity across different channels.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `username` | string | Username |
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `days` | integer | No | Days to analyze (default: 30, max: 365) |
+
+**Response:**
+```json
+{
+  "user": { "username": "chatuser123", "display_name": "ChatUser123" },
+  "period": "30 days",
+  "channels": [
+    {
+      "name": "pokimane",
+      "displayName": "Pokimane",
+      "messageCount": 520,
+      "activeDays": 15,
+      "firstMessage": "2025-11-04T12:30:00.000Z",
+      "lastMessage": "2025-12-04T18:45:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+#### Get Most Used Emotes
+`GET /api/users/:username/analytics/emotes`
+
+Get the user's most frequently used emotes.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `username` | string | Username |
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `days` | integer | No | Days to analyze (default: 30, max: 365) |
+| `limit` | integer | No | Number of emotes to return (default: 20, max: 100) |
+
+**Response:**
+```json
+{
+  "user": { "username": "chatuser123", "display_name": "ChatUser123" },
+  "period": "30 days",
+  "emotes": [
+    { "emote": "KEKW", "count": 150 },
+    { "emote": "OMEGALUL", "count": 89 },
+    { "emote": "PogChamp", "count": 45 }
+  ]
+}
+```
+
+---
+
+#### Get Analytics Summary
+`GET /api/users/:username/analytics/summary`
+
+Get a comprehensive analytics summary for a user.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `username` | string | Username |
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `days` | integer | No | Days to analyze (default: 30, max: 365) |
+
+**Response:**
+```json
+{
+  "user": { "username": "chatuser123", "display_name": "ChatUser123" },
+  "period": "30 days",
+  "summary": {
+    "totalMessages": 1250,
+    "activeDays": 22,
+    "avgMessageLength": 45,
+    "maxMessageLength": 280,
+    "deletedMessages": 3,
+    "peakHour": 15,
+    "peakHourMessages": 310,
+    "currentStreak": 5,
+    "bans": 0,
+    "timeouts": 2,
+    "deletions": 1
+  }
+}
+```
+
+---
+
 ### Mod Actions
 
 #### List Mod Actions
@@ -726,7 +1281,7 @@ Get aggregate statistics for moderation actions.
 #### List Channels
 `GET /api/channels`
 
-Get all monitored channels.
+Get all monitored channels with their connection and streaming status.
 
 **Query Parameters:**
 
@@ -745,11 +1300,59 @@ Get all monitored channels.
       "display_name": "Pokimane",
       "created_at": "2025-01-15T10:30:00.000Z",
       "is_active": true,
-      "message_count": 15432
+      "is_joined": true,
+      "is_live": true,
+      "viewer_count": 15432,
+      "game_name": "Just Chatting",
+      "stream_title": "morning stream!",
+      "profile_image_url": "https://static-cdn.jtvnw.net/jtv_user_pictures/pokimane-profile_image.png",
+      "message_count": 154320
     }
   ]
 }
 ```
+
+**Channel Status Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `is_joined` | boolean | Whether the bot is connected to the channel's IRC chat |
+| `is_live` | boolean | Whether the channel is currently streaming on Twitch |
+| `viewer_count` | number | Current viewer count (only when `is_live` is true) |
+| `game_name` | string | Current game/category (only when `is_live` is true) |
+| `stream_title` | string | Current stream title (only when `is_live` is true) |
+| `started_at` | string | ISO timestamp of when the stream started (only when `is_live` is true) |
+| `profile_image_url` | string | URL to the channel's Twitch profile picture |
+
+---
+
+#### Get Live Status
+`GET /api/channels/live/status`
+
+Force refresh and get Twitch streaming status for all active channels.
+
+**Response:**
+```json
+{
+  "configured": true,
+  "channels": [
+    {
+      "name": "pokimane",
+      "is_live": true,
+      "viewer_count": 15432,
+      "game_name": "Just Chatting",
+      "title": "morning stream!",
+      "started_at": "2025-01-15T10:30:00.000Z"
+    },
+    {
+      "name": "xqc",
+      "is_live": false
+    }
+  ]
+}
+```
+
+**Note:** If Twitch API is not configured (missing `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET`), returns `configured: false` with all channels showing `is_live: false`.
 
 ---
 
@@ -772,7 +1375,14 @@ Get a specific channel by name.
   "name": "pokimane",
   "display_name": "Pokimane",
   "created_at": "2025-01-15T10:30:00.000Z",
-  "is_active": true
+  "is_active": true,
+  "is_joined": true,
+  "is_live": true,
+  "viewer_count": 15432,
+  "game_name": "Just Chatting",
+  "stream_title": "morning stream!",
+  "started_at": "2025-01-15T10:30:00.000Z",
+  "profile_image_url": "https://static-cdn.jtvnw.net/jtv_user_pictures/pokimane-profile_image.png"
 }
 ```
 
@@ -1145,6 +1755,1128 @@ Get system-wide statistics.
 
 ---
 
+### Admin
+
+All admin endpoints require authentication via `X-API-Key` header.
+
+#### Get System Information
+`GET /api/admin/system`
+
+Get comprehensive system information including Node.js, memory, CPU, and OS details.
+
+**Response:**
+```json
+{
+  "server": {
+    "nodeVersion": "v20.10.0",
+    "platform": "linux",
+    "arch": "x64",
+    "pid": 1234,
+    "uptime": 3600.5,
+    "startTime": "2025-12-04T12:00:00.000Z"
+  },
+  "memory": {
+    "rss": 67108864,
+    "heapTotal": 33554432,
+    "heapUsed": 25165824,
+    "external": 1048576,
+    "arrayBuffers": 524288,
+    "systemTotal": 17179869184,
+    "systemFree": 8589934592
+  },
+  "cpu": {
+    "cores": 8,
+    "model": "Intel(R) Core(TM) i7-10700K",
+    "speed": 3800,
+    "loadAvg": [1.5, 1.2, 0.8]
+  },
+  "os": {
+    "type": "Linux",
+    "release": "5.15.0-generic",
+    "hostname": "chatterbox-server",
+    "uptime": 86400
+  },
+  "env": {
+    "nodeEnv": "production",
+    "port": 3000,
+    "logLevel": "info"
+  }
+}
+```
+
+---
+
+#### Get Database Statistics
+`GET /api/admin/database`
+
+Get database statistics, table sizes, connection info, and query stats.
+
+**Response:**
+```json
+{
+  "size": 1073741824,
+  "version": "PostgreSQL 15.4",
+  "tables": [
+    {
+      "name": "messages",
+      "totalSize": 536870912,
+      "tableSize": 402653184,
+      "indexesSize": 134217728,
+      "rowCount": 1500000
+    }
+  ],
+  "connections": {
+    "total": 10,
+    "active": 2,
+    "idle": 8,
+    "idleInTransaction": 0
+  },
+  "stats": {
+    "transactionsCommitted": 50000,
+    "transactionsRolledBack": 5,
+    "cacheHitRatio": 99.5,
+    "tuplesReturned": 1000000,
+    "tuplesFetched": 500000,
+    "tuplesInserted": 100000,
+    "tuplesUpdated": 1000,
+    "tuplesDeleted": 500,
+    "conflicts": 0,
+    "deadlocks": 0
+  }
+}
+```
+
+---
+
+#### Get Analytics
+`GET /api/admin/analytics`
+
+Get detailed analytics about messages, users, and activity over a specified period.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `period` | string | `24h` | Time period: `1h`, `6h`, `24h`, `7d`, `30d` |
+
+**Response:**
+```json
+{
+  "period": "24h",
+  "messagesOverTime": [
+    { "hour": "2025-12-04T12:00:00.000Z", "count": 1500 }
+  ],
+  "modActionsOverTime": [
+    { "hour": "2025-12-04T12:00:00.000Z", "actionType": "timeout", "count": 5 }
+  ],
+  "topChatters": [
+    { "username": "chatuser123", "displayName": "ChatUser123", "messageCount": 500 }
+  ],
+  "channelActivity": [
+    { "name": "pokimane", "displayName": "Pokimane", "messageCount": 5000, "uniqueUsers": 500 }
+  ],
+  "modActionBreakdown": [
+    { "actionType": "timeout", "count": 25 },
+    { "actionType": "ban", "count": 5 }
+  ],
+  "peakHours": [
+    { "hour": 20, "count": 15000 }
+  ],
+  "dailyMessages": [
+    { "date": "2025-12-04", "count": 50000 }
+  ]
+}
+```
+
+---
+
+#### Get Services Status
+`GET /api/admin/services`
+
+Get status of all services (Twitch IRC, WebSocket, Archive, Database).
+
+**Response:**
+```json
+{
+  "services": {
+    "database": {
+      "name": "PostgreSQL",
+      "status": "healthy",
+      "connected": true
+    },
+    "twitch": {
+      "name": "Twitch IRC",
+      "status": "healthy",
+      "connected": true,
+      "channels": ["pokimane", "xqc"],
+      "username": "botusername"
+    },
+    "websocket": {
+      "name": "WebSocket Server",
+      "status": "healthy",
+      "connectedClients": 25
+    },
+    "archive": {
+      "name": "Archive Service",
+      "status": "healthy",
+      "stats": {
+        "pendingMessages": 10,
+        "totalArchived": 500000
+      }
+    }
+  }
+}
+```
+
+---
+
+#### Get Server Configuration
+`GET /api/admin/config`
+
+Get current server configuration (sensitive values redacted).
+
+**Response:**
+```json
+{
+  "server": {
+    "port": 3000,
+    "nodeEnv": "production",
+    "logLevel": "info"
+  },
+  "database": {
+    "host": "postgres",
+    "port": 5432,
+    "name": "twitch_archive",
+    "user": "twitch"
+  },
+  "twitch": {
+    "username": "botusername",
+    "channels": ["pokimane", "xqc"]
+  },
+  "client": {
+    "url": "https://chatterbox.example.com"
+  },
+  "features": {
+    "apiKeyConfigured": true
+  }
+}
+```
+
+---
+
+#### Get Performance Metrics
+`GET /api/admin/performance`
+
+Get database performance metrics including slow queries, table bloat, and index usage.
+
+**Response:**
+```json
+{
+  "slowQueries": [
+    {
+      "query": "SELECT * FROM messages WHERE...",
+      "calls": 1000,
+      "totalTime": 5000.5,
+      "meanTime": 5.0,
+      "rows": 50000
+    }
+  ],
+  "tableBloat": [
+    {
+      "tableName": "public.messages",
+      "deadTuples": 5000,
+      "liveTuples": 1500000,
+      "deadTuplePercent": 0.33,
+      "lastVacuum": null,
+      "lastAutovacuum": "2025-12-04T10:00:00.000Z"
+    }
+  ],
+  "indexUsage": [
+    {
+      "tableName": "public.messages",
+      "indexName": "messages_channel_idx",
+      "scans": 50000,
+      "tuplesRead": 100000,
+      "tuplesFetched": 50000,
+      "indexSize": 67108864
+    }
+  ]
+}
+```
+
+---
+
+#### Restart Service
+`POST /api/admin/services/:service/restart`
+
+Restart a specific service.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `service` | string | Service to restart: `twitch`, `archive` |
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Twitch IRC reconnecting..."
+}
+```
+
+**Errors:**
+- `400`: Unknown service
+- `404`: Service not available
+
+---
+
+#### Run Database Vacuum
+`POST /api/admin/database/vacuum`
+
+Run VACUUM ANALYZE on database tables to reclaim space and update statistics.
+
+**Request Body:**
+```json
+{
+  "table": "messages"  // Optional, omit to vacuum all tables
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "VACUUM ANALYZE completed on messages"
+}
+```
+
+**Errors:**
+- `400`: Invalid table name
+
+---
+
+#### Get Server Settings
+`GET /api/admin/settings`
+
+Get all server configuration settings including defaults and current values. These are configurable runtime settings (rate limits, timeouts, etc.).
+
+**Response:**
+```json
+{
+  "configs": [
+    {
+      "key": "rateLimit.windowMs",
+      "value": 60000,
+      "defaultValue": 60000,
+      "description": "Rate limit window in milliseconds",
+      "type": "number"
+    },
+    {
+      "key": "rateLimit.maxRequests",
+      "value": 10000,
+      "defaultValue": 10000,
+      "description": "Maximum requests per rate limit window",
+      "type": "number"
+    }
+  ]
+}
+```
+
+---
+
+#### Update Setting Value
+`PUT /api/admin/settings/:key`
+
+Update a specific server setting value.
+
+**URL Parameters:**
+- `key` - Setting key (e.g., `rateLimit.windowMs`)
+
+**Request Body:**
+```json
+{
+  "value": 30000,
+  "description": "Optional description"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Configuration updated",
+  "key": "rateLimit.windowMs",
+  "value": 30000
+}
+```
+
+---
+
+#### Reset Setting to Default
+`DELETE /api/admin/settings/:key`
+
+Reset a setting value back to its default.
+
+**URL Parameters:**
+- `key` - Setting key
+
+**Response:**
+```json
+{
+  "message": "Configuration reset to default",
+  "key": "rateLimit.windowMs",
+  "value": 60000
+}
+```
+
+---
+
+#### Bulk Update Settings
+`POST /api/admin/settings/bulk`
+
+Update multiple server settings at once.
+
+**Request Body:**
+```json
+{
+  "configs": [
+    { "key": "rateLimit.windowMs", "value": 30000 },
+    { "key": "rateLimit.maxRequests", "value": 5000 }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Updated 2 configuration values"
+}
+```
+
+---
+
+#### Get System Configuration
+`GET /api/admin/config`
+
+Get system configuration info (environment, port, database info). This is read-only system information.
+
+**Response:**
+```json
+{
+  "server": {
+    "port": 5000,
+    "nodeEnv": "production"
+  },
+  "database": {
+    "host": "localhost",
+    "database": "chatterbox"
+  },
+  "twitch": {
+    "clientIdConfigured": true,
+    "callbackUrl": "https://example.com/auth/callback"
+  }
+}
+```
+
+---
+
+#### Get Traffic Analytics
+`GET /api/admin/traffic`
+
+Get traffic analytics data for monitoring server activity.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `timeRange` | string | `day` | Time range: `hour`, `day`, `week` |
+
+**Response:**
+```json
+{
+  "stats": {
+    "totalRequests": 150000,
+    "uniqueIps": 1250,
+    "totalErrors": 150,
+    "topEndpoints": [
+      { "method": "GET", "path": "/api/messages", "count": 50000 }
+    ],
+    "ipStats": {
+      "192.168.1.100": {
+        "requests": 5000,
+        "errors": 5,
+        "lastSeen": "2025-12-05T20:00:00.000Z"
+      }
+    }
+  }
+}
+```
+
+---
+
+#### Cleanup Traffic Logs
+`DELETE /api/admin/traffic/cleanup`
+
+Delete old traffic logs to free up space.
+
+**Request Body:**
+```json
+{
+  "olderThanDays": 30
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Cleaned up traffic logs older than 30 days",
+  "deletedCount": 500000
+}
+```
+
+---
+
+#### Get IP Rules
+`GET /api/admin/ip-rules`
+
+Get all IP blocking/rate limiting rules.
+
+**Response:**
+```json
+{
+  "rules": [
+    {
+      "id": 1,
+      "ip_address": "192.168.1.100",
+      "rule_type": "block",
+      "reason": "Spam abuse",
+      "rate_limit_override": null,
+      "expires_at": "2025-12-10T00:00:00.000Z",
+      "created_at": "2025-12-05T20:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+#### Get IP Status
+`GET /api/admin/ip-rules/:ip/status`
+
+Get current status for a specific IP address.
+
+**URL Parameters:**
+- `ip` - IP address to check
+
+**Response:**
+```json
+{
+  "ip": "192.168.1.100",
+  "blocked": false,
+  "rateLimitOverride": null,
+  "requests": 1500,
+  "errors": 2,
+  "lastSeen": "2025-12-05T20:00:00.000Z"
+}
+```
+
+---
+
+#### Block IP Address
+`POST /api/admin/ip-rules/block`
+
+Block an IP address from accessing the API.
+
+**Request Body:**
+```json
+{
+  "ip": "192.168.1.100",
+  "reason": "Spam abuse",
+  "expiresAt": "2025-12-10T00:00:00.000Z"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "IP 192.168.1.100 has been blocked",
+  "ip": "192.168.1.100"
+}
+```
+
+---
+
+#### Unblock IP Address
+`POST /api/admin/ip-rules/unblock`
+
+Remove a block on an IP address.
+
+**Request Body:**
+```json
+{
+  "ip": "192.168.1.100"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "IP 192.168.1.100 has been unblocked",
+  "ip": "192.168.1.100"
+}
+```
+
+---
+
+#### Set IP Rate Limit Override
+`POST /api/admin/ip-rules/rate-limit`
+
+Set a custom rate limit for a specific IP address.
+
+**Request Body:**
+```json
+{
+  "ip": "192.168.1.100",
+  "limit": 500,
+  "expiresAt": "2025-12-10T00:00:00.000Z"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Rate limit for 192.168.1.100 set to 500",
+  "ip": "192.168.1.100",
+  "limit": 500
+}
+```
+
+**Notes:**
+- Set `limit` to `null` to remove the override (whitelist)
+- Without an `expiresAt`, the rule is permanent
+
+---
+
+#### Delete IP Rule
+`DELETE /api/admin/ip-rules/:id`
+
+Delete an IP rule by its ID.
+
+**URL Parameters:**
+- `id` - Rule ID
+
+**Response:**
+```json
+{
+  "message": "IP rule deleted"
+}
+```
+
+---
+
+### OAuth Authentication (User Login)
+
+Chatterbox supports Twitch OAuth login for users to access personalized features like viewing their followed channels.
+
+#### Initiate OAuth Login
+`GET /api/oauth/login`
+
+Redirects the user to Twitch's OAuth authorization page.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `redirect` | string | Optional URL to redirect to after successful login |
+
+**Response:** 302 redirect to Twitch OAuth authorization
+
+---
+
+#### OAuth Callback
+`GET /api/oauth/callback`
+
+Handles the OAuth callback from Twitch after user authorization.
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `code` | string | Authorization code from Twitch |
+| `state` | string | State token for CSRF protection |
+
+**Response:** 302 redirect to client with tokens in query params
+```
+/auth/callback?accessToken=...&refreshToken=...&user=...
+```
+
+**Error Response:** Redirect with error
+```
+/login?error=invalid_state
+```
+
+---
+
+#### Refresh Access Token
+`POST /api/oauth/refresh`
+
+Refresh an expired access token using a valid refresh token.
+
+**Request Body:**
+```json
+{
+  "refreshToken": "your-refresh-token"
+}
+```
+
+**Response:**
+```json
+{
+  "accessToken": "new-jwt-access-token",
+  "expiresIn": 900
+}
+```
+
+**Errors:**
+- `400`: Refresh token required
+- `401`: Invalid or expired refresh token
+
+---
+
+#### Logout
+`POST /api/oauth/logout`
+
+**Authentication:** Bearer token required
+
+Invalidate the current session's refresh token.
+
+**Request Body:**
+```json
+{
+  "refreshToken": "current-refresh-token"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Logged out successfully"
+}
+```
+
+---
+
+#### Logout All Sessions
+`POST /api/oauth/logout-all`
+
+**Authentication:** Bearer token required
+
+Invalidate all refresh tokens for the current user.
+
+**Response:**
+```json
+{
+  "message": "All sessions logged out"
+}
+```
+
+---
+
+#### Get Current User
+`GET /api/oauth/me`
+
+**Authentication:** Bearer token required
+
+Get the current authenticated user's profile and pending requests.
+
+**Response:**
+```json
+{
+  "user": {
+    "id": 1,
+    "twitch_id": "12345678",
+    "username": "cooluser",
+    "display_name": "CoolUser",
+    "email": "user@example.com",
+    "profile_image_url": "https://static-cdn.jtvnw.net/...",
+    "is_admin": false,
+    "created_at": "2025-01-15T10:30:00.000Z"
+  },
+  "requests": [
+    {
+      "id": 1,
+      "request_type": "export",
+      "status": "pending",
+      "created_at": "2025-01-15T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+#### Get Followed Streams
+`GET /api/oauth/followed-streams`
+
+**Authentication:** Bearer token required
+
+Get live streams from channels the authenticated user follows on Twitch.
+
+**Response:**
+```json
+{
+  "streams": [
+    {
+      "id": "123456789",
+      "user_id": "87654321",
+      "user_login": "pokimane",
+      "user_name": "Pokimane",
+      "game_id": "509658",
+      "game_name": "Just Chatting",
+      "title": "chill stream!",
+      "viewer_count": 25000,
+      "started_at": "2025-01-15T18:00:00.000Z",
+      "language": "en",
+      "thumbnail_url": "https://static-cdn.jtvnw.net/...",
+      "tags": ["English", "Chill"],
+      "is_mature": false
+    }
+  ],
+  "total": 5
+}
+```
+
+---
+
+### User Data Requests
+
+Users can request export or deletion of their data. These requests require admin approval.
+
+#### Create Data Request
+`POST /api/oauth/requests`
+
+**Authentication:** Bearer token required
+
+Create a new data export or deletion request.
+
+**Request Body:**
+```json
+{
+  "type": "export",  // or "delete"
+  "notes": "Optional notes about the request"
+}
+```
+
+**Response:**
+```json
+{
+  "request": {
+    "id": 1,
+    "user_id": 1,
+    "request_type": "export",
+    "status": "pending",
+    "user_notes": "Optional notes about the request",
+    "created_at": "2025-01-15T12:00:00.000Z"
+  }
+}
+```
+
+**Errors:**
+- `400`: Invalid request type or duplicate pending request
+- `401`: Not authenticated
+
+---
+
+#### Cancel Data Request
+`DELETE /api/oauth/requests/:id`
+
+**Authentication:** Bearer token required
+
+Cancel a pending data request (only the owner can cancel).
+
+**Response:**
+```json
+{
+  "message": "Request cancelled"
+}
+```
+
+**Errors:**
+- `400`: Cannot cancel non-pending requests
+- `403`: Not authorized to cancel this request
+- `404`: Request not found
+
+---
+
+### Admin User Request Management
+
+Admin endpoints for managing user data requests. Require both Bearer token (admin user) and API key.
+
+#### List All User Requests
+`GET /api/admin/user-requests`
+
+**Authentication:** Bearer token (admin) + X-API-Key
+
+Get all user requests with filtering and pagination.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `status` | string | - | Filter by status: `pending`, `approved`, `denied`, `completed`, `cancelled` |
+| `type` | string | - | Filter by type: `export`, `delete` |
+| `page` | integer | 1 | Page number |
+| `limit` | integer | 20 | Results per page |
+
+**Response:**
+```json
+{
+  "requests": [
+    {
+      "id": 1,
+      "user_id": 1,
+      "request_type": "export",
+      "status": "pending",
+      "user_notes": "I need my data",
+      "admin_notes": null,
+      "created_at": "2025-01-15T12:00:00.000Z",
+      "username": "cooluser",
+      "display_name": "CoolUser",
+      "profile_image_url": "https://..."
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 5,
+    "pages": 1
+  }
+}
+```
+
+---
+
+#### Get Pending Requests
+`GET /api/admin/user-requests/pending`
+
+**Authentication:** Bearer token (admin) + X-API-Key
+
+Get only pending requests for quick admin review.
+
+**Response:**
+```json
+{
+  "requests": [...],
+  "count": 3
+}
+```
+
+---
+
+#### Get Request Details
+`GET /api/admin/user-requests/:id`
+
+**Authentication:** Bearer token (admin) + X-API-Key
+
+Get detailed information about a specific request, including user stats.
+
+**Response:**
+```json
+{
+  "request": {
+    "id": 1,
+    "user_id": 1,
+    "request_type": "export",
+    "status": "pending",
+    "user_notes": "I need my data",
+    "admin_notes": null,
+    "created_at": "2025-01-15T12:00:00.000Z",
+    "updated_at": "2025-01-15T12:00:00.000Z"
+  },
+  "user": {
+    "id": 1,
+    "twitch_id": "12345678",
+    "username": "cooluser",
+    "display_name": "CoolUser",
+    "profile_image_url": "https://..."
+  },
+  "stats": {
+    "messageCount": 1500,
+    "modActionCount": 2,
+    "channelCount": 5
+  }
+}
+```
+
+---
+
+#### Approve Request
+`POST /api/admin/user-requests/:id/approve`
+
+**Authentication:** Bearer token (admin) + X-API-Key
+
+Approve a pending request. For export requests, generates a data download URL. For delete requests, executes the deletion.
+
+**Request Body:**
+```json
+{
+  "notes": "Optional admin notes"
+}
+```
+
+**Response (Export):**
+```json
+{
+  "message": "Export request approved",
+  "request": {
+    "id": 1,
+    "status": "completed",
+    "download_url": "data:application/json;base64,..."
+  }
+}
+```
+
+**Response (Delete):**
+```json
+{
+  "message": "Delete request approved and executed",
+  "request": {
+    "id": 1,
+    "status": "completed"
+  },
+  "deleted": {
+    "messages": 1500,
+    "modActions": 2,
+    "user": true
+  }
+}
+```
+
+**Errors:**
+- `400`: Request not pending
+- `404`: Request not found
+
+---
+
+#### Deny Request
+`POST /api/admin/user-requests/:id/deny`
+
+**Authentication:** Bearer token (admin) + X-API-Key
+
+Deny a pending request with optional explanation.
+
+**Request Body:**
+```json
+{
+  "notes": "Reason for denial"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Request denied",
+  "request": {
+    "id": 1,
+    "status": "denied",
+    "admin_notes": "Reason for denial"
+  }
+}
+```
+
+---
+
+#### List OAuth Users
+`GET /api/admin/oauth-users`
+
+**Authentication:** Bearer token (admin) + X-API-Key
+
+List all users who have logged in via OAuth.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `page` | integer | 1 | Page number |
+| `limit` | integer | 50 | Results per page |
+
+**Response:**
+```json
+{
+  "users": [
+    {
+      "id": 1,
+      "twitch_id": "12345678",
+      "username": "cooluser",
+      "display_name": "CoolUser",
+      "profile_image_url": "https://...",
+      "is_admin": false,
+      "created_at": "2025-01-15T10:30:00.000Z",
+      "last_login": "2025-01-16T08:00:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 50,
+    "total": 10,
+    "pages": 1
+  }
+}
+```
+
+---
+
+#### Set User Admin Status
+`POST /api/admin/oauth-users/:id/admin`
+
+**Authentication:** Bearer token (admin) + X-API-Key
+
+Grant or revoke admin status for an OAuth user.
+
+**Request Body:**
+```json
+{
+  "isAdmin": true
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Admin status updated",
+  "user": {
+    "id": 1,
+    "username": "cooluser",
+    "is_admin": true
+  }
+}
+```
+
+---
+
+#### Delete OAuth User
+`DELETE /api/admin/oauth-users/:id`
+
+**Authentication:** Bearer token (admin) + X-API-Key
+
+Delete an OAuth user and all their associated data (sessions, requests).
+
+**URL Parameters:**
+- `id` - User ID
+
+**Response:**
+```json
+{
+  "message": "User deleted successfully"
+}
+```
+
+**Error Responses:**
+- `400`: Cannot delete your own account
+- `404`: User not found
+
+---
+
 ## WebSocket API
 
 The WebSocket API provides real-time updates for chat messages and moderation events using Socket.IO.
@@ -1188,6 +2920,18 @@ socket.emit('subscribe', { channels: 'pokimane' });
 
 ---
 
+#### `subscribe_global`
+Subscribe to global events (stats updates, channel status changes, global mod actions). Useful for dashboard/monitoring clients that need system-wide updates without subscribing to specific channels.
+
+**Payload:**
+```javascript
+socket.emit('subscribe_global');
+```
+
+**Server Response:** `subscribed_global` event with confirmation
+
+---
+
 #### `unsubscribe`
 Unsubscribe from channel updates.
 
@@ -1197,6 +2941,16 @@ socket.emit('unsubscribe', { channels: ['pokimane'] });
 ```
 
 **Server Response:** `unsubscribed` event with confirmation
+
+---
+
+#### `unsubscribe_global`
+Unsubscribe from global events.
+
+**Payload:**
+```javascript
+socket.emit('unsubscribe_global');
+```
 
 ---
 
@@ -1359,6 +3113,131 @@ Confirmation of channel unsubscription.
   "channels": ["pokimane"]
 }
 ```
+
+---
+
+#### `subscribed_global`
+Confirmation of global subscription (for dashboard real-time updates). No payload.
+
+---
+
+#### `stats_update`
+Real-time system statistics update (sent to global subscribers when messages are flushed).
+
+**Payload:**
+```json
+{
+  "totalMessages": 150000,
+  "totalUsers": 5000,
+  "activeChannels": 3,
+  "connectedClients": 10,
+  "archiveBuffer": {
+    "bufferedMessages": 0,
+    "isProcessing": false
+  },
+  "timestamp": "2025-12-04T15:45:00.000Z"
+}
+```
+
+---
+
+#### `global_mod_action`
+Mod action broadcast to all global subscribers (for dashboard mod feed).
+
+**Payload:**
+```json
+{
+  "action_type": "timeout",
+  "target_username": "spammer",
+  "channel_name": "pokimane",
+  "duration_seconds": 600,
+  "timestamp": "2025-12-04T15:45:00.000Z"
+}
+```
+
+---
+
+#### `channel_status`
+Channel streaming and connection status update. Sent when a channel goes live/offline or viewer count changes significantly.
+
+**Payload:**
+```json
+{
+  "name": "pokimane",
+  "display_name": "Pokimane",
+  "is_live": true,
+  "viewer_count": 15432,
+  "stream_title": "morning stream!",
+  "game_name": "Just Chatting",
+  "started_at": "2025-01-15T10:30:00.000Z",
+  "profile_image_url": "https://static-cdn.jtvnw.net/jtv_user_pictures/pokimane-profile_image.png"
+}
+```
+
+**Note:** The server polls Twitch API every 60 seconds and broadcasts updates when:
+- A channel goes live or offline (`is_live` changes)
+- Viewer count changes by more than 100
+- Initial status is loaded after server start
+
+---
+
+#### `mps_update`
+Global real-time messages per second statistics. Sent to global subscribers every second with system-wide MPS and per-channel MPS data. Useful for dashboards and monitoring.
+
+**Payload:**
+```json
+{
+  "mps": 125.5,
+  "channelMps": {
+    "xqc": 45.2,
+    "pokimane": 38.7,
+    "forsen": 41.6
+  },
+  "timestamp": "2025-12-04T15:45:30.000Z"
+}
+```
+
+**Example Handler:**
+```javascript
+socket.on('mps_update', (data) => {
+  console.log(`Global MPS: ${data.mps} msg/sec`);
+  console.log(`Top channel: ${Object.entries(data.channelMps).sort((a, b) => b[1] - a[1])[0][0]}`);
+});
+```
+
+**Note:** 
+- Only sent to clients subscribed via `subscribe_global`
+- Updates every 1 second with a snapshot of message counts per channel
+- Useful for real-time dashboards, monitoring systems, and activity visualizations
+
+---
+
+#### `channel_mps`
+Channel-specific real-time messages per second. Sent to clients subscribed to a specific channel every second.
+
+**Payload:**
+```json
+{
+  "channel": "xqc",
+  "mps": 45.2,
+  "timestamp": "2025-12-04T15:45:30.000Z"
+}
+```
+
+**Example Handler:**
+```javascript
+socket.emit('subscribe', { channels: ['xqc'] });
+
+socket.on('channel_mps', (data) => {
+  console.log(`[${data.channel}] ${data.mps} messages/sec`);
+});
+```
+
+**Note:**
+- Sent to each channel room every 1 second
+- Clients must be subscribed to that specific channel to receive this event
+- Complements the global `mps_update` with per-channel granularity
+- Can be used to display activity indicators, load bars, or sparkline charts on channel pages
 
 ---
 
@@ -1906,10 +3785,18 @@ class ChatterboxWebSocket {
 | GET | `/api/messages/search` | Full-text search messages |
 | GET | `/api/messages/:id` | Get message by ID |
 | GET | `/api/users` | List users |
+| GET | `/api/users/top` | Get top users by message count |
+| GET | `/api/users/blocked` | Get blocked users (auth) |
 | GET | `/api/users/:username` | Get user profile |
 | GET | `/api/users/:username/messages` | Get user's messages |
 | GET | `/api/users/:username/mod-actions` | Get mod actions against user |
 | GET | `/api/users/:username/stats` | Get user statistics |
+| GET | `/api/users/:username/export` | Export user data (auth) |
+| POST | `/api/users/:username/block` | Block user (auth) |
+| POST | `/api/users/:username/unblock` | Unblock user (auth) |
+| PATCH | `/api/users/:username/notes` | Update user notes (auth) |
+| DELETE | `/api/users/:username/messages` | Delete user messages (auth) |
+| DELETE | `/api/users/:username` | Delete user and data (auth) |
 | GET | `/api/mod-actions` | List mod actions |
 | GET | `/api/mod-actions/recent` | Get recent mod actions |
 | GET | `/api/mod-actions/stats` | Get mod action statistics |
@@ -1922,12 +3809,86 @@ class ChatterboxWebSocket {
 | POST | `/api/channels/:name/rejoin` | Rejoin channel IRC |
 | GET | `/api/health` | Health check |
 | GET | `/api/stats` | System statistics |
+| GET | `/api/oauth/login` | Initiate Twitch OAuth login |
+| GET | `/api/oauth/callback` | OAuth callback handler |
+| POST | `/api/oauth/refresh` | Refresh access token |
+| POST | `/api/oauth/logout` | Logout current session |
+| POST | `/api/oauth/logout-all` | Logout all sessions |
+| GET | `/api/oauth/me` | Get current user (Bearer auth) |
+| GET | `/api/oauth/followed-streams` | Get followed live streams (Bearer auth) |
+| POST | `/api/oauth/requests` | Create data request (Bearer auth) |
+| DELETE | `/api/oauth/requests/:id` | Cancel data request (Bearer auth) |
+| GET | `/api/admin/user-requests` | List user requests (Admin) |
+| GET | `/api/admin/user-requests/pending` | Get pending requests (Admin) |
+| GET | `/api/admin/user-requests/:id` | Get request details (Admin) |
+| POST | `/api/admin/user-requests/:id/approve` | Approve request (Admin) |
+| POST | `/api/admin/user-requests/:id/deny` | Deny request (Admin) |
+| GET | `/api/admin/oauth-users` | List OAuth users (Admin) |
+| POST | `/api/admin/oauth-users/:id/admin` | Set user admin status (Admin) |
+
+### WebSocket Events Quick Reference
+
+| Event | Direction | Description |
+|-------|-----------|-------------|
+| `subscribe` | Client → Server | Subscribe to channel updates |
+| `subscribe_global` | Client → Server | Subscribe to global/dashboard updates |
+| `unsubscribe` | Client → Server | Unsubscribe from channels |
+| `unsubscribe_global` | Client → Server | Unsubscribe from global updates |
+| `ping` | Client → Server | Health check |
+| `chat_message` | Server → Client | New chat message |
+| `message_deleted` | Server → Client | Message was deleted |
+| `mod_action` | Server → Client | Mod action in subscribed channel |
+| `messages_flushed` | Server → Client | Messages saved to database |
+| `stats_update` | Server → Client | Real-time stats (global subscribers) |
+| `global_mod_action` | Server → Client | Mod action across all channels |
+| `channel_status` | Server → Client | Channel connect/disconnect |
+| `subscribed` | Server → Client | Subscription confirmation |
+| `subscribed_global` | Server → Client | Global subscription confirmation |
+| `pong` | Server → Client | Ping response |
 
 ### Date Format
 
 All dates use ISO 8601 format: `YYYY-MM-DDTHH:mm:ss.sssZ`
 
 Example: `2025-12-04T15:45:30.123Z`
+
+---
+
+## Future Features & Roadmap
+
+### Planned Features
+
+#### 🔍 Advanced Search & Analytics
+- **Semantic search** - Natural language queries like "find toxic messages" or "show hype moments"
+- **Sentiment analysis dashboard** - Track chat mood over time with visualizations
+- **Trend detection** - Identify viral moments, copypastas, and emerging memes
+- **Custom alerts** - Get notified when specific patterns or users appear
+
+#### 📊 Enhanced Analytics
+- **Stream session analysis** - Compare chat engagement across different streams
+- **Viewer behavior insights** - Message frequency patterns, peak activity times
+- **Moderator effectiveness reports** - Track timeout/ban rates, false positive estimates
+- **Word clouds & n-gram analysis** - Visual representation of chat vocabulary
+
+#### 🛡️ Advanced Moderation Tools
+- **Predictive moderation** - Flag potentially problematic users before they cause issues
+- **Cross-channel reputation system** - Share ban lists and user notes across channels
+- **Automod rule builder** - Create custom regex patterns with preview and testing
+- **Appeal management** - Track and manage user appeals
+
+#### 🔗 Integrations
+- **Discord webhooks** - Send mod actions and highlights to Discord
+- **OBS integration** - Display chat stats on stream
+- **Streamlabs/StreamElements** - Sync with existing moderation tools
+- **Twitch EventSub** - Real-time stream events (live/offline, title changes)
+
+#### 📱 User Experience
+- **Custom themes** - Light mode, OLED dark, custom colors
+- **Keyboard shortcuts** - Power user navigation
+- **Saved searches** - Quick access to frequent queries
+- **Export formats** - CSV, JSON, PDF reports
+
+---
 
 ### Support
 

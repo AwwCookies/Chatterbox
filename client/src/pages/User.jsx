@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { usersApi } from '../services/api';
@@ -8,7 +8,8 @@ import LoadingSpinner from '../components/common/LoadingSpinner';
 import MessageList from '../components/chat/MessageList';
 import ModActionList from '../components/moderation/ModActionList';
 import InfiniteScroll from '../components/common/InfiniteScroll';
-import { User as UserIcon, MessageSquare, Shield, Calendar, Hash, AlertTriangle } from 'lucide-react';
+import UserAnalyticsTab from '../components/user/UserAnalyticsTab';
+import { User as UserIcon, MessageSquare, Shield, Calendar, Hash, AlertTriangle, BarChart3 } from 'lucide-react';
 import { MobileUser } from './mobile';
 
 function User({ isMobile }) {
@@ -18,6 +19,7 @@ function User({ isMobile }) {
   }
 
   const { username } = useParams();
+  const [activeTab, setActiveTab] = useState('overview');
   const { data: user, isLoading, error } = useUser(username);
   
   // Infinite query for messages
@@ -185,27 +187,108 @@ function User({ isMobile }) {
         </div>
       )}
 
-      {/* Messages & Mod Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-700">
+        <nav className="flex space-x-4">
+          {[
+            { id: 'overview', label: 'Overview', icon: UserIcon },
+            { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+            { id: 'messages', label: 'Messages', icon: MessageSquare },
+            { id: 'moderation', label: 'Mod Actions', icon: Shield },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center space-x-2 px-4 py-3 border-b-2 transition-colors ${
+                activeTab === tab.id
+                  ? 'border-twitch-purple text-twitch-purple'
+                  : 'border-transparent text-gray-400 hover:text-white'
+              }`}
+            >
+              <tab.icon className="w-4 h-4" />
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'overview' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-twitch-gray rounded-lg border border-gray-700">
+            <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-white flex items-center">
+                <MessageSquare className="w-5 h-5 mr-2 text-twitch-purple" />
+                Recent Messages
+                {messagesData?.pages?.[0]?.total > 0 && (
+                  <span className="text-sm text-gray-400 font-normal ml-2">
+                    ({formatNumber(messagesData.pages[0].total)})
+                  </span>
+                )}
+              </h2>
+              <button 
+                onClick={() => setActiveTab('messages')}
+                className="text-sm text-twitch-purple hover:underline"
+              >
+                View all
+              </button>
+            </div>
+            <div className="max-h-96 overflow-y-auto">
+              <MessageList 
+                messages={messages.slice(0, 10)}
+                isLoading={messagesLoading}
+                emptyMessage="No messages found"
+              />
+            </div>
+          </div>
+
+          <div className="bg-twitch-gray rounded-lg border border-gray-700">
+            <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-white flex items-center">
+                <Shield className="w-5 h-5 mr-2 text-red-400" />
+                Mod Actions
+                {modActionsData?.pages?.[0]?.total > 0 && (
+                  <span className="text-sm text-gray-400 font-normal ml-2">
+                    ({formatNumber(modActionsData.pages[0].total)})
+                  </span>
+                )}
+              </h2>
+              <button 
+                onClick={() => setActiveTab('moderation')}
+                className="text-sm text-twitch-purple hover:underline"
+              >
+                View all
+              </button>
+            </div>
+            <div className="max-h-96 overflow-y-auto">
+              <ModActionList 
+                actions={modActions.slice(0, 10)}
+                isLoading={modActionsLoading}
+                emptyMessage="No mod actions found"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'analytics' && (
+        <UserAnalyticsTab username={username} />
+      )}
+
+      {activeTab === 'messages' && (
         <div className="bg-twitch-gray rounded-lg border border-gray-700">
-          <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+          <div className="p-4 border-b border-gray-700">
             <h2 className="text-lg font-semibold text-white flex items-center">
               <MessageSquare className="w-5 h-5 mr-2 text-twitch-purple" />
-              Recent Messages
+              All Messages
               {messagesData?.pages?.[0]?.total > 0 && (
                 <span className="text-sm text-gray-400 font-normal ml-2">
                   ({formatNumber(messagesData.pages[0].total)})
                 </span>
               )}
             </h2>
-            <Link 
-              to={`/messages?user=${username}`}
-              className="text-sm text-twitch-purple hover:underline"
-            >
-              View all
-            </Link>
           </div>
-          <div className="max-h-96 overflow-y-auto">
+          <div className="max-h-[600px] overflow-y-auto">
             <InfiniteScroll
               hasNextPage={hasNextMessages}
               fetchNextPage={fetchNextMessages}
@@ -221,12 +304,14 @@ function User({ isMobile }) {
             </InfiniteScroll>
           </div>
         </div>
+      )}
 
+      {activeTab === 'moderation' && (
         <div className="bg-twitch-gray rounded-lg border border-gray-700">
-          <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+          <div className="p-4 border-b border-gray-700">
             <h2 className="text-lg font-semibold text-white flex items-center">
               <Shield className="w-5 h-5 mr-2 text-red-400" />
-              Mod Actions
+              All Mod Actions
               {modActionsData?.pages?.[0]?.total > 0 && (
                 <span className="text-sm text-gray-400 font-normal ml-2">
                   ({formatNumber(modActionsData.pages[0].total)})
@@ -234,7 +319,7 @@ function User({ isMobile }) {
               )}
             </h2>
           </div>
-          <div className="max-h-96 overflow-y-auto">
+          <div className="max-h-[600px] overflow-y-auto">
             <InfiniteScroll
               hasNextPage={hasNextModActions}
               fetchNextPage={fetchNextModActions}
@@ -250,7 +335,7 @@ function User({ isMobile }) {
             </InfiniteScroll>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

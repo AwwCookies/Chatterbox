@@ -4,9 +4,21 @@ import logger from '../utils/logger.js';
 class User {
   /**
    * Find or create a user, updating last_seen
+   * Skips blocked users if skipBlocked is true
    */
-  static async findOrCreate(username, twitchId = null, displayName = null) {
+  static async findOrCreate(username, twitchId = null, displayName = null, skipBlocked = true) {
     const normalizedUsername = username.toLowerCase();
+    
+    // Check if user is blocked
+    if (skipBlocked) {
+      const existing = await query(
+        'SELECT is_blocked FROM users WHERE username = $1',
+        [normalizedUsername]
+      );
+      if (existing.rows[0]?.is_blocked) {
+        return null; // Skip blocked users
+      }
+    }
     
     // Try upsert
     const result = await query(
@@ -22,6 +34,17 @@ class User {
     );
     
     return result.rows[0];
+  }
+
+  /**
+   * Check if a user is blocked
+   */
+  static async isBlocked(username) {
+    const result = await query(
+      'SELECT is_blocked FROM users WHERE username = $1',
+      [username.toLowerCase()]
+    );
+    return result.rows[0]?.is_blocked || false;
   }
 
   /**
@@ -51,9 +74,16 @@ class User {
    */
   static async search(searchTerm, limit = 50, offset = 0) {
     const result = await query(
-      `SELECT * FROM users 
-       WHERE username ILIKE $1 OR display_name ILIKE $1
-       ORDER BY last_seen DESC
+      `SELECT 
+        u.*,
+        COUNT(DISTINCT m.id)::BIGINT as message_count,
+        COALESCE((SELECT COUNT(*) FROM mod_actions ma WHERE ma.target_user_id = u.id AND ma.action_type = 'timeout'), 0)::BIGINT as timeout_count,
+        COALESCE((SELECT COUNT(*) FROM mod_actions ma WHERE ma.target_user_id = u.id AND ma.action_type = 'ban'), 0)::BIGINT as ban_count
+       FROM users u
+       LEFT JOIN messages m ON u.id = m.user_id
+       WHERE u.username ILIKE $1 OR u.display_name ILIKE $1
+       GROUP BY u.id
+       ORDER BY u.last_seen DESC
        LIMIT $2 OFFSET $3`,
       [`%${searchTerm}%`, limit, offset]
     );
@@ -132,9 +162,170 @@ class User {
         user.twitchId,
         user.displayName
       );
-      results.push(result);
+      if (result) {
+        results.push(result);
+      }
     }
     return results;
+  }
+
+  /**
+   * Get top users by message count
+   */
+  static async getTopUsers(options = {}) {
+    const { limit = 50, offset = 0, channelId = null, since = null, until = null } = options;
+    
+    const result = await query(
+      'SELECT * FROM get_top_users($1, $2, $3, $4, $5)',
+      [limit, offset, channelId, since, until]
+    );
+    
+    // Get total count
+    let countSql = 'SELECT COUNT(DISTINCT u.id) FROM users u';
+    const countParams = [];
+    
+    if (channelId) {
+      countSql += ' JOIN messages m ON u.id = m.user_id WHERE m.channel_id = $1';
+      countParams.push(channelId);
+    }
+    
+    const countResult = await query(countSql, countParams);
+    const total = parseInt(countResult.rows[0].count);
+    
+    return {
+      users: result.rows,
+      total,
+      hasMore: offset + result.rows.length < total
+    };
+  }
+
+  /**
+   * Block a user from being logged
+   */
+  static async blockUser(userId, reason = null) {
+    const result = await query(
+      `UPDATE users 
+       SET is_blocked = TRUE, blocked_at = NOW(), blocked_reason = $2
+       WHERE id = $1
+       RETURNING *`,
+      [userId, reason]
+    );
+    return result.rows[0];
+  }
+
+  /**
+   * Unblock a user
+   */
+  static async unblockUser(userId) {
+    const result = await query(
+      `UPDATE users 
+       SET is_blocked = FALSE, blocked_at = NULL, blocked_reason = NULL
+       WHERE id = $1
+       RETURNING *`,
+      [userId]
+    );
+    return result.rows[0];
+  }
+
+  /**
+   * Update user notes
+   */
+  static async updateNotes(userId, notes) {
+    const result = await query(
+      'UPDATE users SET notes = $2 WHERE id = $1 RETURNING *',
+      [userId, notes]
+    );
+    return result.rows[0];
+  }
+
+  /**
+   * Delete all messages for a user
+   */
+  static async deleteAllMessages(userId) {
+    const result = await query(
+      'DELETE FROM messages WHERE user_id = $1 RETURNING id',
+      [userId]
+    );
+    return result.rowCount;
+  }
+
+  /**
+   * Delete user and all their data (messages, mod actions)
+   */
+  static async deleteUser(userId) {
+    // Delete messages
+    const messagesDeleted = await query(
+      'DELETE FROM messages WHERE user_id = $1',
+      [userId]
+    );
+    
+    // Delete mod actions where user is target
+    const modActionsDeleted = await query(
+      'DELETE FROM mod_actions WHERE target_user_id = $1',
+      [userId]
+    );
+    
+    // Delete the user
+    const userDeleted = await query(
+      'DELETE FROM users WHERE id = $1 RETURNING *',
+      [userId]
+    );
+    
+    return {
+      user: userDeleted.rows[0],
+      messagesDeleted: messagesDeleted.rowCount,
+      modActionsDeleted: modActionsDeleted.rowCount
+    };
+  }
+
+  /**
+   * Export user data (GDPR compliance)
+   */
+  static async exportUserData(userId) {
+    const user = await query('SELECT * FROM users WHERE id = $1', [userId]);
+    const messages = await query(
+      `SELECT m.*, c.name as channel_name 
+       FROM messages m 
+       JOIN channels c ON m.channel_id = c.id 
+       WHERE m.user_id = $1 
+       ORDER BY m.timestamp DESC`,
+      [userId]
+    );
+    const modActions = await query(
+      `SELECT ma.*, c.name as channel_name 
+       FROM mod_actions ma 
+       JOIN channels c ON ma.channel_id = c.id 
+       WHERE ma.target_user_id = $1 
+       ORDER BY ma.timestamp DESC`,
+      [userId]
+    );
+    
+    return {
+      user: user.rows[0],
+      messages: messages.rows,
+      modActions: modActions.rows,
+      exportedAt: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Get all blocked users
+   */
+  static async getBlockedUsers(limit = 50, offset = 0) {
+    const result = await query(
+      `SELECT * FROM users 
+       WHERE is_blocked = TRUE 
+       ORDER BY blocked_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    
+    const countResult = await query('SELECT COUNT(*) FROM users WHERE is_blocked = TRUE');
+    
+    return {
+      users: result.rows,
+      total: parseInt(countResult.rows[0].count)
+    };
   }
 }
 

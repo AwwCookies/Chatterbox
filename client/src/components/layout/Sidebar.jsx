@@ -3,19 +3,23 @@ import { useQuery } from '@tanstack/react-query';
 import { channelsApi } from '../../services/api';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useUIStore } from '../../stores/uiStore';
+import { useAuthStore } from '../../stores/authStore';
 import { 
   Home, 
   MessageSquare, 
   Shield, 
   Radio, 
   Hash,
+  Users,
   ChevronDown,
   ChevronRight,
   ChevronLeft,
   Settings,
   PanelLeftClose,
   PanelLeft,
-  Bug
+  Code,
+  Server,
+  Heart
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -23,6 +27,7 @@ const navItems = [
   { path: '/', icon: Home, label: 'Dashboard' },
   { path: '/live', icon: Radio, label: 'Live Feed' },
   { path: '/messages', icon: MessageSquare, label: 'Messages' },
+  { path: '/users', icon: Users, label: 'Users' },
   { path: '/moderation', icon: Shield, label: 'Moderation' },
   { path: '/channels', icon: Hash, label: 'Channels' },
 ];
@@ -32,8 +37,9 @@ function Sidebar() {
   const sidebarCollapsed = useSettingsStore(state => state.sidebarCollapsed);
   const toggleSidebar = useSettingsStore(state => state.toggleSetting);
   const openSettingsModal = useUIStore(state => state.openSettingsModal);
-  const toggleApiDebugPanel = useUIStore(state => state.toggleApiDebugPanel);
-  const apiDebugPanelOpen = useUIStore(state => state.apiDebugPanelOpen);
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+  const isAdmin = useAuthStore(state => state.isAdmin);
+  const user = useAuthStore(state => state.user);
   
   const { data: channelsData } = useQuery({
     queryKey: ['channels', { active: true }],
@@ -80,6 +86,26 @@ function Sidebar() {
               </NavLink>
             </li>
           ))}
+          
+          {/* Following - only show when authenticated */}
+          {isAuthenticated && (
+            <li>
+              <NavLink
+                to="/following"
+                title={sidebarCollapsed ? 'Following' : undefined}
+                className={({ isActive }) =>
+                  `flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} px-3 py-2 rounded-md transition-colors ${
+                    isActive
+                      ? 'bg-twitch-purple text-white'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  }`
+                }
+              >
+                <Heart className="w-5 h-5 flex-shrink-0" />
+                {!sidebarCollapsed && <span>Following</span>}
+              </NavLink>
+            </li>
+          )}
         </ul>
 
         {/* Active Channels */}
@@ -157,18 +183,40 @@ function Sidebar() {
             {!sidebarCollapsed && <span>Settings</span>}
           </button>
           
-          <button
-            onClick={toggleApiDebugPanel}
-            title={sidebarCollapsed ? 'API Debug' : undefined}
-            className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} px-3 py-2 rounded-md transition-colors ${
-              apiDebugPanelOpen
-                ? 'bg-yellow-500/20 text-yellow-400'
-                : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-            }`}
-          >
-            <Bug className="w-5 h-5 flex-shrink-0" />
-            {!sidebarCollapsed && <span>API Debug</span>}
-          </button>
+          {/* Admin-only links */}
+          {user?.is_admin && (
+            <>
+              <NavLink
+                to="/admin"
+                title={sidebarCollapsed ? 'Server Admin' : undefined}
+                className={({ isActive }) =>
+                  `w-full flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} px-3 py-2 rounded-md transition-colors ${
+                    isActive
+                      ? 'bg-twitch-purple text-white'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  }`
+                }
+              >
+                <Server className="w-5 h-5 flex-shrink-0" />
+                {!sidebarCollapsed && <span>Server Admin</span>}
+              </NavLink>
+
+              <NavLink
+                to="/api-explorer"
+                title={sidebarCollapsed ? 'API Explorer' : undefined}
+                className={({ isActive }) =>
+                  `w-full flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} px-3 py-2 rounded-md transition-colors ${
+                    isActive
+                      ? 'bg-twitch-purple text-white'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  }`
+                }
+              >
+                <Code className="w-5 h-5 flex-shrink-0" />
+                {!sidebarCollapsed && <span>API Explorer</span>}
+              </NavLink>
+            </>
+          )}
         </div>
       </nav>
     </aside>

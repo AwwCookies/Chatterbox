@@ -121,12 +121,13 @@ function CommandPalette() {
       if (channelsData?.channels?.length > 0) {
         items.push({ type: 'header', label: 'Active Channels' });
         channelsData.channels.slice(0, 5).forEach(channel => {
+          const sublabel = channel.is_live ? 'Live' : channel.is_joined ? 'Monitoring' : undefined;
           items.push({
             id: `channel-${channel.id}`,
             type: 'channel',
             icon: Hash,
             label: channel.display_name || channel.name,
-            sublabel: channel.is_live ? 'Live' : undefined,
+            sublabel,
             path: `/channel/${channel.name}`,
           });
         });
@@ -150,11 +151,13 @@ function CommandPalette() {
         if (matchingChannels.length > 0) {
           items.push({ type: 'header', label: 'Channels' });
           matchingChannels.slice(0, 5).forEach(channel => {
+            const sublabel = channel.is_live ? 'Live' : channel.is_joined ? 'Monitoring' : undefined;
             items.push({
               id: `channel-${channel.id}`,
               type: 'channel',
               icon: Hash,
               label: channel.display_name || channel.name,
+              sublabel,
               path: `/channel/${channel.name}`,
             });
           });

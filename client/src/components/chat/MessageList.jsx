@@ -6,7 +6,8 @@ function MessageList({
   isLoading, 
   error, 
   showChannel = true,
-  emptyMessage = 'No messages found' 
+  emptyMessage = 'No messages found',
+  onMessageClick = null
 }) {
   if (isLoading) {
     return (
@@ -40,6 +41,7 @@ function MessageList({
           message={message} 
           showChannel={showChannel}
           channelId={message.channel_twitch_id}
+          onThreadClick={onMessageClick}
         />
       ))}
     </div>

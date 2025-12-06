@@ -7,6 +7,7 @@ import SearchBar from '../components/common/SearchBar';
 import InfiniteScroll from '../components/common/InfiniteScroll';
 import { MessageSquare, Filter, RefreshCw } from 'lucide-react';
 import { useSettingsStore } from '../stores/settingsStore';
+import { useThreadCardStore } from '../stores/threadCardStore';
 import { MobileMessages } from './mobile';
 
 function Messages({ isMobile }) {
@@ -22,6 +23,7 @@ function Messages({ isMobile }) {
     user: searchParams.get('user') || '',
     includeDeleted: searchParams.get('includeDeleted') === 'true',
   });
+  const openThreadCard = useThreadCardStore(state => state.openCard);
   const resultsPerPage = useSettingsStore(state => state.resultsPerPage);
 
   // Sync URL params when filters change
@@ -167,6 +169,7 @@ function Messages({ isMobile }) {
             isLoading={isLoading}
             error={error}
             showChannel={!filters.channel}
+            onMessageClick={(messageId) => openThreadCard(messageId, filters.channel || null)}
           />
         </InfiniteScroll>
       </div>
