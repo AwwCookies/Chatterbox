@@ -30,7 +30,21 @@ router.get('/', requireUserAuth, async (req, res) => {
       webhook_url_masked: '****' + w.webhook_url.slice(-8),
     }));
     
-    res.json({ webhooks: maskedWebhooks });
+    // Get config limits
+    const [maxPerUser, maxUrlsPerUser, maxTrackedUsernames] = await Promise.all([
+      ConfigService.get('webhooks.maxPerUser'),
+      ConfigService.get('webhooks.maxUrlsPerUser'),
+      ConfigService.get('webhooks.maxTrackedUsernames'),
+    ]);
+    
+    res.json({ 
+      webhooks: maskedWebhooks,
+      limits: {
+        maxPerUser,
+        maxUrlsPerUser,
+        maxTrackedUsernames,
+      }
+    });
   } catch (error) {
     logger.error('Error fetching webhooks:', error);
     res.status(500).json({ error: 'Failed to fetch webhooks' });
@@ -210,7 +224,14 @@ router.get('/urls', requireUserAuth, async (req, res) => {
       webhook_url_masked: '****' + u.webhook_url.slice(-8),
     }));
     
-    res.json({ urls: maskedUrls });
+    const maxUrlsPerUser = await ConfigService.get('webhooks.maxUrlsPerUser');
+    
+    res.json({ 
+      urls: maskedUrls,
+      limits: {
+        maxUrlsPerUser,
+      }
+    });
   } catch (error) {
     logger.error('Error fetching saved URLs:', error);
     res.status(500).json({ error: 'Failed to fetch saved URLs' });

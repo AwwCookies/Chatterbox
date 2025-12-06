@@ -216,7 +216,7 @@ function WebhookCard({ webhook, onEdit, onDelete, onTest, onToggle }) {
 }
 
 // Create/Edit webhook modal
-function WebhookModal({ webhook, onClose, onSave, savedUrls = [], onRefreshUrls }) {
+function WebhookModal({ webhook, onClose, onSave, savedUrls = [], onRefreshUrls, maxTrackedUsernames = 50 }) {
   const [formData, setFormData] = useState({
     name: webhook?.name || '',
     webhookUrl: '',
@@ -476,7 +476,7 @@ function WebhookModal({ webhook, onClose, onSave, savedUrls = [], onRefreshUrls 
                 className="w-full bg-twitch-gray border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-twitch-purple font-mono text-sm"
               />
               <p className="text-xs text-gray-500 mt-1">
-                Separate usernames with commas or new lines (max 50)
+                Separate usernames with commas or new lines (max {maxTrackedUsernames})
               </p>
             </div>
           )}
@@ -682,7 +682,7 @@ function WebhookModal({ webhook, onClose, onSave, savedUrls = [], onRefreshUrls 
 }
 
 // Saved URLs management section
-function SavedUrlsSection({ urls, onRefresh }) {
+function SavedUrlsSection({ urls, onRefresh, maxUrls = 20 }) {
   const [expanded, setExpanded] = useState(false);
   const [newUrlName, setNewUrlName] = useState('');
   const [newUrl, setNewUrl] = useState('');
@@ -750,7 +750,7 @@ function SavedUrlsSection({ urls, onRefresh }) {
           <Bookmark className="w-5 h-5 text-yellow-400" />
           <div>
             <span className="font-medium text-white">Saved Webhook URLs</span>
-            <span className="text-gray-500 text-sm ml-2">({urls.length}/20)</span>
+            <span className="text-gray-500 text-sm ml-2">({urls.length}/{maxUrls})</span>
           </div>
         </div>
         {expanded ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
@@ -919,11 +919,19 @@ export default function Webhooks() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingWebhook, setEditingWebhook] = useState(null);
+  const [limits, setLimits] = useState({
+    maxPerUser: 10,
+    maxUrlsPerUser: 20,
+    maxTrackedUsernames: 50,
+  });
 
   const fetchWebhooks = async () => {
     try {
       const response = await webhooksApi.getAll();
       setWebhooks(response.data.webhooks || []);
+      if (response.data.limits) {
+        setLimits(prev => ({ ...prev, ...response.data.limits }));
+      }
     } catch (error) {
       addToast('Failed to load webhooks', 'error');
     } finally {
@@ -935,6 +943,9 @@ export default function Webhooks() {
     try {
       const response = await webhooksApi.getSavedUrls();
       setSavedUrls(response.data.urls || []);
+      if (response.data.limits) {
+        setLimits(prev => ({ ...prev, ...response.data.limits }));
+      }
     } catch (error) {
       // Silent fail for URLs - not critical
     }
@@ -1046,7 +1057,7 @@ export default function Webhooks() {
         </div>
         <button
           onClick={handleCreate}
-          disabled={webhooks.length >= 10}
+          disabled={webhooks.length >= limits.maxPerUser}
           className="flex items-center gap-2 px-4 py-2 bg-twitch-purple hover:bg-twitch-purple-dark disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -1058,7 +1069,7 @@ export default function Webhooks() {
       <HelpSection />
 
       {/* Saved URLs section */}
-      <SavedUrlsSection urls={savedUrls} onRefresh={fetchSavedUrls} />
+      <SavedUrlsSection urls={savedUrls} onRefresh={fetchSavedUrls} maxUrls={limits.maxUrlsPerUser} />
 
       {/* Webhooks list */}
       {loading ? (
@@ -1084,7 +1095,7 @@ export default function Webhooks() {
         <div className="space-y-3">
           <div className="flex items-center justify-between text-sm text-gray-400">
             <span>{webhooks.length} webhook{webhooks.length !== 1 ? 's' : ''}</span>
-            <span>{10 - webhooks.length} remaining</span>
+            <span>{limits.maxPerUser - webhooks.length} remaining</span>
           </div>
           {webhooks.map(webhook => (
             <WebhookCard
@@ -1107,6 +1118,7 @@ export default function Webhooks() {
           onSave={handleSave}
           savedUrls={savedUrls}
           onRefreshUrls={fetchSavedUrls}
+          maxTrackedUsernames={limits.maxTrackedUsernames}
         />
       )}
     </div>

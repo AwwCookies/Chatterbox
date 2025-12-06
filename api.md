@@ -2984,7 +2984,12 @@ Get all webhooks for the authenticated user.
       "last_triggered_at": "2025-01-16T10:30:00.000Z",
       "created_at": "2025-01-15T08:00:00.000Z"
     }
-  ]
+  ],
+  "limits": {
+    "maxPerUser": 10,
+    "maxUrlsPerUser": 20,
+    "maxTrackedUsernames": 50
+  }
 }
 ```
 
@@ -3125,7 +3130,10 @@ Get all saved webhook URLs for the authenticated user.
       "created_at": "2025-01-15T08:00:00.000Z",
       "last_used_at": "2025-01-16T10:30:00.000Z"
     }
-  ]
+  ],
+  "limits": {
+    "maxUrlsPerUser": 20
+  }
 }
 ```
 
