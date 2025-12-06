@@ -39,7 +39,12 @@ api.interceptors.request.use((config) => {
   
   // Add Bearer token for OAuth endpoints (user auth)
   // Import auth store dynamically to avoid circular deps
-  if (config.url?.startsWith('/oauth/') && !config.url?.includes('/login') && !config.url?.includes('/callback') && !config.url?.includes('/refresh')) {
+  const needsBearerAuth = (
+    (config.url?.startsWith('/oauth/') && !config.url?.includes('/login') && !config.url?.includes('/callback') && !config.url?.includes('/refresh')) ||
+    config.url?.startsWith('/chat/')
+  );
+  
+  if (needsBearerAuth) {
     const authState = JSON.parse(localStorage.getItem('chatterbox-auth') || '{}');
     const accessToken = authState?.state?.accessToken;
     if (accessToken) {
@@ -152,6 +157,13 @@ export const authApi = {
   getFollowedStreams: () => api.get('/oauth/followed-streams'),
   createRequest: (type, reason) => api.post('/oauth/requests', { type, reason }),
   cancelRequest: (id) => api.delete(`/oauth/requests/${id}`),
+};
+
+// Chat API (sending messages via Twitch)
+export const chatApi = {
+  sendMessage: (channelName, message, replyParentMessageId = null) => 
+    api.post('/chat/send', { channelName, message, replyParentMessageId }),
+  getPermissions: (channel) => api.get(`/chat/permissions/${channel}`),
 };
 
 // Admin API

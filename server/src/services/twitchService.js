@@ -1,6 +1,7 @@
 import { createTwitchClient, getInitialChannels } from '../config/twitch.js';
 import Channel from '../models/Channel.js';
 import User from '../models/User.js';
+import Message from '../models/Message.js';
 import logger from '../utils/logger.js';
 
 class TwitchService {
@@ -242,6 +243,9 @@ class TwitchService {
     const channelRecord = await Channel.findOrCreate(channelName);
     const targetUser = await User.findOrCreate(username);
     
+    // Get the user's last message in this channel
+    const lastMessage = await Message.getLastUserMessage(channelRecord.id, targetUser.id);
+    
     const modAction = {
       channelId: channelRecord.id,
       moderatorId: null, // We don't always know the moderator
@@ -263,7 +267,9 @@ class TwitchService {
       target_display_name: targetUser.display_name,
       channel_name: channelName,
       channelName,
-      channel_twitch_id: channelRecord.twitch_id
+      channel_twitch_id: channelRecord.twitch_id,
+      last_message: lastMessage?.message_text || null,
+      message_text: lastMessage?.message_text || null
     };
 
     // Broadcast to channel subscribers
@@ -283,6 +289,9 @@ class TwitchService {
     
     const channelRecord = await Channel.findOrCreate(channelName);
     const targetUser = await User.findOrCreate(username);
+    
+    // Get the user's last message in this channel
+    const lastMessage = await Message.getLastUserMessage(channelRecord.id, targetUser.id);
     
     const modAction = {
       channelId: channelRecord.id,
@@ -308,7 +317,9 @@ class TwitchService {
       target_display_name: targetUser.display_name,
       channel_name: channelName,
       channelName,
-      channel_twitch_id: channelRecord.twitch_id
+      channel_twitch_id: channelRecord.twitch_id,
+      last_message: lastMessage?.message_text || null,
+      message_text: lastMessage?.message_text || null
     };
 
     // Broadcast to channel subscribers

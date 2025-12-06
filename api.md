@@ -20,6 +20,7 @@
   - [System](#system)
   - [Admin](#admin)
   - [OAuth Authentication](#oauth-authentication-user-login)
+  - [Chat](#chat)
   - [User Data Requests](#user-data-requests)
   - [Admin User Request Management](#admin-user-request-management)
 - [WebSocket API](#websocket-api)
@@ -2543,6 +2544,84 @@ Get live streams from channels the authenticated user follows on Twitch.
     }
   ],
   "total": 5
+}
+```
+
+---
+
+### Chat
+
+Send chat messages to Twitch channels on behalf of the authenticated user.
+
+> **Note:** This endpoint requires the user to have authorized the following OAuth scopes: `user:write:chat`, `user:bot`, `channel:bot`. Users may need to re-login to grant these permissions if they logged in before these scopes were added.
+
+#### Send Chat Message
+`POST /api/chat/send`
+
+**Authentication:** Bearer token required
+
+Send a message to a Twitch channel's chat. The message will be sent as the authenticated user.
+
+**Request Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `channel` | string | Yes | The channel name to send the message to (without #) |
+| `message` | string | Yes | The message content (max 500 characters) |
+
+**Example Request:**
+```bash
+curl -X POST http://localhost:3000/api/chat/send \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access_token>" \
+  -d '{
+    "channel": "pokimane",
+    "message": "Hello chat!"
+  }'
+```
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Message sent successfully"
+}
+```
+
+**Error Responses:**
+
+*Missing Fields (400):*
+```json
+{
+  "error": "Channel and message are required"
+}
+```
+
+*Message Too Long (400):*
+```json
+{
+  "error": "Message must be 500 characters or less"
+}
+```
+
+*Channel Not Found (404):*
+```json
+{
+  "error": "Channel not found"
+}
+```
+
+*Token Expired/Invalid (401):*
+```json
+{
+  "error": "Failed to send message - token may need refresh"
+}
+```
+
+*Twitch API Error (500):*
+```json
+{
+  "error": "Twitch API error: <error_message>"
 }
 ```
 

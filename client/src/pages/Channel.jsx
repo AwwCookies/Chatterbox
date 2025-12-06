@@ -228,9 +228,10 @@ function Channel() {
             
             <div className="flex-1">
               <div className="flex items-center space-x-3">
-                <h1 className="text-2xl font-bold text-white">
+                <a href={`/watch/${channelData.name}`}><h1 className="text-2xl font-bold text-white">
                   {channelData.display_name || channelData.name}
                 </h1>
+                </a>
                 {channelData.is_live && (
                   <span className="flex items-center space-x-1 px-2 py-0.5 rounded bg-red-500 text-white text-xs font-medium animate-pulse">
                     <span className="w-2 h-2 rounded-full bg-white" />

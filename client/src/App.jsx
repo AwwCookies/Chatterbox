@@ -16,6 +16,7 @@ import Login from './pages/Login'
 import AuthCallback from './pages/AuthCallback'
 import Following from './pages/Following'
 import Profile from './pages/Profile'
+import Watch from './pages/Watch'
 import ProfileCardContainer from './components/user/ProfileCardContainer'
 import ThreadCardContainer from './components/chat/ThreadCardContainer'
 import ToastContainer from './components/common/ToastContainer'
@@ -126,6 +127,7 @@ function App() {
                   <Route path="/auth/callback" element={<AuthCallback />} />
                   <Route path="/following" element={<Following />} />
                   <Route path="/profile" element={<Profile />} />
+                  <Route path="/watch/:channel" element={<Watch />} />
                 </Routes>
               </ErrorBoundary>
             </main>
@@ -154,6 +156,7 @@ function App() {
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/following" element={<Following isMobile />} />
                 <Route path="/profile" element={<Profile isMobile />} />
+                <Route path="/watch/:channel" element={<Watch />} />
               </Routes>
             </ErrorBoundary>
           </main>

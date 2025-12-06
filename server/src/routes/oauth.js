@@ -15,7 +15,10 @@ const CLIENT_URL = process.env.CLIENT_URL || 'https://chatterbox.calicos.art';
 // Scopes needed for the application
 const TWITCH_SCOPES = [
   'user:read:email',
-  'user:read:follows'
+  'user:read:follows',
+  'user:write:chat',
+  'user:bot',
+  'channel:bot'
 ].join(' ');
 
 // Store state tokens temporarily (in production, use Redis)

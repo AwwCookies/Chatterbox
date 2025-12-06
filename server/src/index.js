@@ -117,6 +117,7 @@ app.use('/api/channels', channelsRouter);
 app.use('/api/utils', utilsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/oauth', oauthRouter);
+app.use('/api/chat', (await import('./routes/chat.js')).default);
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {

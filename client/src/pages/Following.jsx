@@ -38,12 +38,13 @@ const formatUptime = (startedAt) => {
 };
 
 function StreamCard({ stream }) {
+  const watchUrl = `/watch/${stream.userLogin}`;
   const twitchUrl = `https://twitch.tv/${stream.userLogin}`;
   
   return (
     <div className="bg-twitch-gray rounded-lg overflow-hidden border border-gray-700 hover:border-twitch-purple/50 transition-colors group">
-      {/* Thumbnail */}
-      <a href={twitchUrl} target="_blank" rel="noopener noreferrer" className="block relative">
+      {/* Thumbnail - links to our Watch page */}
+      <Link to={watchUrl} className="block relative">
         <img
           src={stream.thumbnailUrl}
           alt={stream.title}
@@ -66,23 +67,21 @@ function StreamCard({ stream }) {
         </div>
         {/* Hover overlay */}
         <div className="absolute inset-0 bg-twitch-purple/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <ExternalLink className="w-8 h-8 text-white" />
+          <Radio className="w-8 h-8 text-white" />
         </div>
-      </a>
+      </Link>
       
       {/* Info */}
       <div className="p-4">
         <div className="flex items-start gap-3">
           {/* Channel name and title */}
           <div className="flex-1 min-w-0">
-            <a 
-              href={twitchUrl} 
-              target="_blank" 
-              rel="noopener noreferrer"
+            <Link 
+              to={watchUrl}
               className="font-semibold text-white hover:text-twitch-purple transition-colors block truncate"
             >
               {stream.userDisplayName}
-            </a>
+            </Link>
             <p className="text-sm text-gray-400 truncate mt-1" title={stream.title}>
               {stream.title}
             </p>
@@ -111,14 +110,23 @@ function StreamCard({ stream }) {
           </div>
         )}
         
-        {/* Link to channel logs if we're tracking it */}
-        <div className="mt-3 pt-3 border-t border-gray-700">
+        {/* Actions */}
+        <div className="mt-3 pt-3 border-t border-gray-700 flex items-center justify-between">
           <Link
             to={`/channel/${stream.userLogin}`}
             className="text-xs text-twitch-purple hover:underline"
           >
             View chat logs →
           </Link>
+          <a
+            href={twitchUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-gray-500 hover:text-gray-400 flex items-center gap-1"
+          >
+            <ExternalLink className="w-3 h-3" />
+            Twitch
+          </a>
         </div>
       </div>
     </div>

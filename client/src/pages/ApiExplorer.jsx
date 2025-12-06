@@ -33,7 +33,8 @@ import {
   MessageSquare,
   Radio,
   Settings,
-  Activity
+  Activity,
+  Send
 } from 'lucide-react';
 
 // Dynamically determine API URL based on current location
@@ -164,6 +165,15 @@ const apiEndpoints = [
       { method: 'POST', path: '/oauth/logout-all', description: 'Logout all sessions', params: [], auth: 'bearer' },
       { method: 'POST', path: '/oauth/requests', description: 'Create data request (export/delete)', params: [], body: { type: 'export', reason: '' }, auth: 'bearer' },
       { method: 'DELETE', path: '/oauth/requests/:id', description: 'Cancel data request', params: ['id'], auth: 'bearer' },
+    ]
+  },
+  {
+    category: 'Chat',
+    icon: Send,
+    color: 'lime',
+    description: 'Send chat messages via Twitch API',
+    endpoints: [
+      { method: 'POST', path: '/chat/send', description: 'Send a message to Twitch chat', params: [], body: { channel: 'channelname', message: 'Hello!' }, auth: 'bearer' },
     ]
   },
   {

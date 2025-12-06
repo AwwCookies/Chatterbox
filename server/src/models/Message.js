@@ -241,6 +241,21 @@ class Message {
   }
 
   /**
+   * Get a user's last message in a channel
+   */
+  static async getLastUserMessage(channelId, userId) {
+    const result = await query(
+      `SELECT m.message_text, m.timestamp, m.message_id
+       FROM messages m
+       WHERE m.channel_id = $1 AND m.user_id = $2
+       ORDER BY m.timestamp DESC
+       LIMIT 1`,
+      [channelId, userId]
+    );
+    return result.rows[0] || null;
+  }
+
+  /**
    * Mark a message as deleted
    */
   static async markDeleted(messageId, deletedById = null) {
