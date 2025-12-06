@@ -33,6 +33,7 @@ import {
   perIpRateLimiter,
   initializeTrafficTracking 
 } from './middleware/trafficMiddleware.js';
+import { createTrackingMiddleware } from './middleware/usageTracking.js';
 
 // Routes
 import messagesRouter from './routes/messages.js';
@@ -88,6 +89,12 @@ app.use('/api', ipBlocker);
 app.use('/api', trafficAnalytics);
 app.use('/api', perIpRateLimiter);
 
+// Usage tracking middleware (async, non-blocking)
+app.use('/api', createTrackingMiddleware({
+  skipPaths: ['/api/health', '/api/metrics'],
+  skipMethods: ['OPTIONS'],
+}));
+
 // Global rate limiting (backup)
 const limiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
@@ -120,6 +127,8 @@ app.use('/api/admin', adminRouter);
 app.use('/api/oauth', oauthRouter);
 app.use('/api/chat', (await import('./routes/chat.js')).default);
 app.use('/api/webhooks', (await import('./routes/webhooks.js')).default);
+app.use('/api/admin', (await import('./routes/tiers.js')).default);
+app.use('/api/me', (await import('./routes/me.js')).default);
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
@@ -495,6 +504,10 @@ const startServer = async () => {
     setTimeout(updateStreamStatuses, 5000);
     // Then update every 60 seconds
     setInterval(updateStreamStatuses, 60000);
+
+    // Start usage background jobs
+    const usageJobs = (await import('./services/usageJobs.js')).default;
+    usageJobs.start();
 
     // Start HTTP server
     httpServer.listen(PORT, () => {

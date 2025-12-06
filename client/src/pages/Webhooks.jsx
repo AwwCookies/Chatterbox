@@ -1057,7 +1057,7 @@ export default function Webhooks() {
         </div>
         <button
           onClick={handleCreate}
-          disabled={webhooks.length >= limits.maxPerUser}
+          disabled={limits.maxPerUser !== -1 && webhooks.length >= limits.maxPerUser}
           className="flex items-center gap-2 px-4 py-2 bg-twitch-purple hover:bg-twitch-purple-dark disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
         >
           <Plus className="w-4 h-4" />
@@ -1095,7 +1095,7 @@ export default function Webhooks() {
         <div className="space-y-3">
           <div className="flex items-center justify-between text-sm text-gray-400">
             <span>{webhooks.length} webhook{webhooks.length !== 1 ? 's' : ''}</span>
-            <span>{limits.maxPerUser - webhooks.length} remaining</span>
+            <span>{limits.maxPerUser === -1 ? 'Unlimited' : `${limits.maxPerUser - webhooks.length} remaining`}</span>
           </div>
           {webhooks.map(webhook => (
             <WebhookCard

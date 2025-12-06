@@ -276,6 +276,32 @@ const apiEndpoints = [
       { method: 'POST', path: '/webhooks/admin/:id/test', description: 'Test admin webhook', params: ['id'], auth: 'bearer' },
     ]
   },
+  {
+    category: 'Admin - Tiers',
+    icon: Shield,
+    color: 'amber',
+    description: 'User tier management and API usage limits',
+    endpoints: [
+      { method: 'GET', path: '/admin/tiers', description: 'List all tiers with user counts', params: [], auth: 'bearer' },
+      { method: 'POST', path: '/admin/tiers', description: 'Create new tier', params: [], body: { name: 'custom', display_name: 'Custom Tier', max_webhooks: 5, max_api_calls_per_minute: 60, max_search_results: 200, message_history_days: 30, features: { exports: true, websocket: true }, is_default: false }, auth: 'bearer' },
+      { method: 'PATCH', path: '/admin/tiers/:id', description: 'Update tier', params: ['id'], body: { display_name: 'Updated Name', max_webhooks: 10 }, auth: 'bearer' },
+      { method: 'DELETE', path: '/admin/tiers/:id', description: 'Delete tier', params: ['id'], auth: 'bearer' },
+      { method: 'GET', path: '/admin/users/:username/tier', description: 'Get user tier', params: ['username'], auth: 'bearer' },
+      { method: 'PUT', path: '/admin/users/:username/tier', description: 'Assign user to tier', params: ['username'], body: { tier_id: 1 }, auth: 'bearer' },
+      { method: 'GET', path: '/admin/users/:username/usage', description: 'Get user API usage stats', params: ['username', 'days'], auth: 'bearer' },
+      { method: 'GET', path: '/admin/usage', description: 'System-wide usage analytics', params: ['days'], auth: 'bearer' },
+    ]
+  },
+  {
+    category: 'User Self-Service',
+    icon: Users,
+    color: 'sky',
+    description: 'User tier and usage information',
+    endpoints: [
+      { method: 'GET', path: '/me/tier', description: 'Get your tier information', params: [], auth: 'bearer' },
+      { method: 'GET', path: '/me/usage', description: 'Get your API usage stats', params: ['days'], auth: 'bearer' },
+    ]
+  },
 ];
 
 // Method colors

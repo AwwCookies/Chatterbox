@@ -24,6 +24,8 @@
   - [User Data Requests](#user-data-requests)
   - [Admin User Request Management](#admin-user-request-management)
   - [Webhooks](#webhooks-discord-notifications)
+  - [Admin Tiers](#admin-tiers)
+  - [User Self-Service](#user-self-service)
 - [WebSocket API](#websocket-api)
 - [Error Handling](#error-handling)
 - [Examples](#examples)
@@ -125,6 +127,20 @@ curl -X POST "https://api.example.com/api/channels" \
 
 ## Rate Limiting
 
+Rate limits are applied per user based on their tier level. Authenticated users have limits defined by their assigned tier. Unauthenticated requests share a global rate limit pool.
+
+### Tier-Based Rate Limits
+
+| Tier | API Calls/Minute | Max Webhooks | Search Results | History Access |
+|------|------------------|--------------|----------------|----------------|
+| Free (default) | 30 | 2 | 100 | 7 days |
+| Pro | 100 | 10 | 500 | 90 days |
+| Enterprise | Unlimited | Unlimited | Unlimited | Unlimited |
+
+**Note:** Admin users bypass all rate limits.
+
+### Global Rate Limit (Unauthenticated)
+
 | Setting | Value |
 |---------|-------|
 | Window | 60 seconds |
@@ -135,6 +151,15 @@ curl -X POST "https://api.example.com/api/channels" \
 ```json
 {
   "error": "Too many requests, please try again later"
+}
+```
+
+**Tier Limit Exceeded Response:**
+```json
+{
+  "error": "Rate limit exceeded",
+  "limit": 30,
+  "reset_in": 45
 }
 ```
 
@@ -3281,6 +3306,370 @@ Get all admin webhooks for system events.
 **Authentication:** Bearer token (admin required)
 
 Send a test notification to verify the webhook.
+
+---
+
+### Admin Tiers
+
+Manage user tiers and API usage limits. Admins can create, update, and delete tiers, as well as assign users to different tiers.
+
+#### Tier Data Model
+```json
+{
+  "id": 1,
+  "name": "Free",
+  "display_name": "Free Tier",
+  "max_webhooks": 2,
+  "max_api_calls_per_minute": 30,
+  "max_search_results": 100,
+  "message_history_days": 7,
+  "features": {
+    "exports": false,
+    "websocket": true
+  },
+  "is_default": true,
+  "created_at": "2025-01-15T10:30:00.000Z",
+  "updated_at": "2025-01-15T10:30:00.000Z"
+}
+```
+
+**Note:** A value of `-1` for any limit means unlimited.
+
+#### List All Tiers
+`GET /api/admin/tiers`
+
+**Authentication:** Bearer token (admin required)
+
+Returns all available tiers with user counts.
+
+**Response:**
+```json
+{
+  "tiers": [
+    {
+      "id": 1,
+      "name": "Free",
+      "display_name": "Free Tier",
+      "max_webhooks": 2,
+      "max_api_calls_per_minute": 30,
+      "max_search_results": 100,
+      "message_history_days": 7,
+      "features": { "exports": false, "websocket": true },
+      "is_default": true,
+      "user_count": 150
+    },
+    {
+      "id": 2,
+      "name": "Pro",
+      "display_name": "Pro Tier",
+      "max_webhooks": 10,
+      "max_api_calls_per_minute": 100,
+      "max_search_results": 500,
+      "message_history_days": 90,
+      "features": { "exports": true, "websocket": true },
+      "is_default": false,
+      "user_count": 25
+    }
+  ]
+}
+```
+
+---
+
+#### Create Tier
+`POST /api/admin/tiers`
+
+**Authentication:** Bearer token (admin required)
+
+Create a new tier.
+
+**Request Body:**
+```json
+{
+  "name": "Enterprise",
+  "display_name": "Enterprise Tier",
+  "max_webhooks": -1,
+  "max_api_calls_per_minute": -1,
+  "max_search_results": -1,
+  "message_history_days": -1,
+  "features": { "exports": true, "websocket": true, "priority_support": true },
+  "is_default": false
+}
+```
+
+**Response:**
+```json
+{
+  "tier": {
+    "id": 3,
+    "name": "Enterprise",
+    "display_name": "Enterprise Tier",
+    "max_webhooks": -1,
+    "max_api_calls_per_minute": -1,
+    "max_search_results": -1,
+    "message_history_days": -1,
+    "features": { "exports": true, "websocket": true, "priority_support": true },
+    "is_default": false,
+    "created_at": "2025-01-15T10:30:00.000Z"
+  }
+}
+```
+
+---
+
+#### Update Tier
+`PATCH /api/admin/tiers/:id`
+
+**Authentication:** Bearer token (admin required)
+
+Update an existing tier.
+
+**Request Body:** (all fields optional)
+```json
+{
+  "display_name": "Updated Name",
+  "max_webhooks": 5,
+  "max_api_calls_per_minute": 50
+}
+```
+
+**Response:**
+```json
+{
+  "tier": { /* updated tier object */ }
+}
+```
+
+---
+
+#### Delete Tier
+`DELETE /api/admin/tiers/:id`
+
+**Authentication:** Bearer token (admin required)
+
+Delete a tier. Cannot delete the default tier.
+
+**Response:**
+```json
+{
+  "message": "Tier deleted successfully"
+}
+```
+
+**Error Responses:**
+- `400`: Cannot delete the default tier
+- `404`: Tier not found
+
+---
+
+#### Get User's Tier
+`GET /api/admin/users/:username/tier`
+
+**Authentication:** Bearer token (admin required)
+
+Get tier information for a specific user.
+
+**Response:**
+```json
+{
+  "user": {
+    "id": 42,
+    "username": "chatuser123",
+    "is_admin": false
+  },
+  "tier": {
+    "id": 1,
+    "name": "Free",
+    "display_name": "Free Tier",
+    "max_webhooks": 2,
+    "max_api_calls_per_minute": 30,
+    "max_search_results": 100,
+    "message_history_days": 7,
+    "features": { "exports": false, "websocket": true }
+  },
+  "assigned_at": "2025-01-15T10:30:00.000Z"
+}
+```
+
+---
+
+#### Assign User to Tier
+`PUT /api/admin/users/:username/tier`
+
+**Authentication:** Bearer token (admin required)
+
+Assign a user to a specific tier.
+
+**Request Body:**
+```json
+{
+  "tier_id": 2
+}
+```
+
+**Response:**
+```json
+{
+  "message": "User assigned to tier successfully",
+  "tier": {
+    "id": 2,
+    "name": "Pro",
+    "display_name": "Pro Tier"
+  }
+}
+```
+
+---
+
+#### Get User's Usage Stats
+`GET /api/admin/users/:username/usage`
+
+**Authentication:** Bearer token (admin required)
+
+Get API usage statistics for a specific user.
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `days` | integer | 7 | Number of days to look back (1-90) |
+
+**Response:**
+```json
+{
+  "user": {
+    "id": 42,
+    "username": "chatuser123"
+  },
+  "usage": {
+    "total_calls": 1234,
+    "period_start": "2025-01-08T00:00:00.000Z",
+    "period_end": "2025-01-15T00:00:00.000Z",
+    "daily_breakdown": [
+      { "date": "2025-01-08", "calls": 150 },
+      { "date": "2025-01-09", "calls": 200 },
+      { "date": "2025-01-10", "calls": 175 }
+    ],
+    "endpoints": [
+      { "endpoint": "GET /api/messages", "count": 450 },
+      { "endpoint": "GET /api/users/:username", "count": 320 },
+      { "endpoint": "GET /api/messages/search", "count": 210 }
+    ]
+  }
+}
+```
+
+---
+
+#### Get System Usage Analytics
+`GET /api/admin/usage`
+
+**Authentication:** Bearer token (admin required)
+
+Get system-wide API usage analytics.
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `days` | integer | 7 | Number of days to look back (1-90) |
+
+**Response:**
+```json
+{
+  "period": {
+    "start": "2025-01-08T00:00:00.000Z",
+    "end": "2025-01-15T00:00:00.000Z"
+  },
+  "totals": {
+    "total_calls": 125000,
+    "unique_users": 450,
+    "avg_response_time_ms": 45
+  },
+  "daily": [
+    { "date": "2025-01-08", "calls": 18000 },
+    { "date": "2025-01-09", "calls": 17500 }
+  ],
+  "top_users": [
+    { "user_id": 42, "username": "chatuser123", "calls": 5000 },
+    { "user_id": 15, "username": "poweruser", "calls": 3500 }
+  ],
+  "top_endpoints": [
+    { "endpoint": "GET /api/messages", "count": 45000 },
+    { "endpoint": "GET /api/messages/search", "count": 28000 }
+  ]
+}
+```
+
+---
+
+### User Self-Service
+
+Endpoints for authenticated users to view their own tier and usage information.
+
+#### Get My Tier
+`GET /api/me/tier`
+
+**Authentication:** Bearer token (required)
+
+Get the current user's tier information.
+
+**Response:**
+```json
+{
+  "tier": {
+    "id": 1,
+    "name": "Free",
+    "display_name": "Free Tier",
+    "max_webhooks": 2,
+    "max_api_calls_per_minute": 30,
+    "max_search_results": 100,
+    "message_history_days": 7,
+    "features": { "exports": false, "websocket": true }
+  },
+  "assigned_at": "2025-01-15T10:30:00.000Z",
+  "is_admin": false
+}
+```
+
+**Note:** If `is_admin` is `true`, the user bypasses all tier limits.
+
+---
+
+#### Get My Usage
+`GET /api/me/usage`
+
+**Authentication:** Bearer token (required)
+
+Get the current user's API usage statistics.
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `days` | integer | 7 | Number of days to look back (1-30) |
+
+**Response:**
+```json
+{
+  "tier": {
+    "id": 1,
+    "name": "Free",
+    "display_name": "Free Tier",
+    "max_api_calls_per_minute": 30
+  },
+  "usage": {
+    "total_calls": 450,
+    "calls_today": 75,
+    "daily_breakdown": [
+      { "date": "2025-01-08", "calls": 50 },
+      { "date": "2025-01-09", "calls": 65 },
+      { "date": "2025-01-10", "calls": 75 }
+    ]
+  },
+  "limits": {
+    "webhooks": { "used": 1, "max": 2 },
+    "api_per_minute": { "current": 5, "max": 30 }
+  }
+}
+```
 
 ---
 

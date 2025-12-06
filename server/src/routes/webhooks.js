@@ -1,7 +1,9 @@
 import express from 'express';
 import Webhook from '../models/Webhook.js';
+import Tier from '../models/Tier.js';
 import discordWebhookService from '../services/discordWebhookService.js';
 import { requireUserAuth, requireAdmin } from '../middleware/auth.js';
+import { attachTier, checkWebhookLimit } from '../middleware/tierLimits.js';
 import ConfigService from '../services/configService.js';
 import logger from '../utils/logger.js';
 
@@ -20,7 +22,7 @@ const isValidWebhookUrl = (url) => {
 /**
  * GET /api/webhooks - Get user's webhooks
  */
-router.get('/', requireUserAuth, async (req, res) => {
+router.get('/', requireUserAuth, attachTier, async (req, res) => {
   try {
     const webhooks = await Webhook.getUserWebhooks(req.user.id);
     
@@ -30,12 +32,24 @@ router.get('/', requireUserAuth, async (req, res) => {
       webhook_url_masked: '****' + w.webhook_url.slice(-8),
     }));
     
-    // Get config limits
-    const [maxPerUser, maxUrlsPerUser, maxTrackedUsernames] = await Promise.all([
+    // Get config limits (defaults)
+    const [configMaxPerUser, maxUrlsPerUser, maxTrackedUsernames] = await Promise.all([
       ConfigService.get('webhooks.maxPerUser'),
       ConfigService.get('webhooks.maxUrlsPerUser'),
       ConfigService.get('webhooks.maxTrackedUsernames'),
     ]);
+    
+    // Use tier-based limit if available
+    const tier = req.tier;
+    let maxPerUser = configMaxPerUser;
+    
+    if (tier) {
+      if (Tier.isUnlimited(tier.max_webhooks)) {
+        maxPerUser = -1; // -1 means unlimited
+      } else {
+        maxPerUser = tier.max_webhooks;
+      }
+    }
     
     res.json({ 
       webhooks: maskedWebhooks,
@@ -43,7 +57,11 @@ router.get('/', requireUserAuth, async (req, res) => {
         maxPerUser,
         maxUrlsPerUser,
         maxTrackedUsernames,
-      }
+      },
+      tier: tier ? {
+        name: tier.name,
+        display_name: tier.display_name,
+      } : null,
     });
   } catch (error) {
     logger.error('Error fetching webhooks:', error);
@@ -54,7 +72,7 @@ router.get('/', requireUserAuth, async (req, res) => {
 /**
  * POST /api/webhooks - Create a webhook
  */
-router.post('/', requireUserAuth, async (req, res) => {
+router.post('/', requireUserAuth, attachTier, checkWebhookLimit, async (req, res) => {
   try {
     const {
       name,
@@ -81,11 +99,21 @@ router.post('/', requireUserAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid webhook type' });
     }
 
-    // Check user webhook limit (configurable)
-    const maxWebhooks = await ConfigService.get('webhooks.maxPerUser');
+    // Check user webhook limit - use tier-based limit if available, fall back to config
+    const tier = req.tier;
+    let maxWebhooks;
+    
+    if (tier && !Tier.isUnlimited(tier.max_webhooks)) {
+      maxWebhooks = tier.max_webhooks;
+    } else if (tier && Tier.isUnlimited(tier.max_webhooks)) {
+      maxWebhooks = Infinity; // Unlimited
+    } else {
+      maxWebhooks = await ConfigService.get('webhooks.maxPerUser');
+    }
+    
     const existingWebhooks = await Webhook.getUserWebhooks(req.user.id);
     if (existingWebhooks.length >= maxWebhooks) {
-      return res.status(400).json({ error: `Maximum of ${maxWebhooks} webhooks allowed per user` });
+      return res.status(400).json({ error: `Maximum of ${maxWebhooks} webhooks allowed` });
     }
 
     // Validate config based on type

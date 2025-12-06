@@ -43,7 +43,11 @@ api.interceptors.request.use((config) => {
     (config.url?.startsWith('/oauth/') && !config.url?.includes('/login') && !config.url?.includes('/callback') && !config.url?.includes('/refresh')) ||
     config.url?.startsWith('/chat/') ||
     config.url?.startsWith('/webhooks') ||
-    config.url?.startsWith('/admin/oauth-users')
+    config.url?.startsWith('/admin/oauth-users') ||
+    config.url?.startsWith('/admin/tiers') ||
+    config.url?.startsWith('/admin/users/') ||
+    config.url?.startsWith('/admin/usage') ||
+    config.url?.startsWith('/me/')
   );
   
   if (needsBearerAuth) {
@@ -196,6 +200,37 @@ export const webhooksApi = {
   adminUpdate: (id, data) => api.put(`/webhooks/admin/${id}`, data),
   adminDelete: (id) => api.delete(`/webhooks/admin/${id}`),
   adminTest: (id) => api.post(`/webhooks/admin/${id}/test`),
+};
+
+// Tiers API (Admin)
+export const tiersApi = {
+  // Tier management
+  getAll: () => api.get('/admin/tiers'),
+  getById: (id) => api.get(`/admin/tiers/${id}`),
+  create: (data) => api.post('/admin/tiers', data),
+  update: (id, data) => api.patch(`/admin/tiers/${id}`, data),
+  delete: (id) => api.delete(`/admin/tiers/${id}`),
+  getTierUsers: (id, params) => api.get(`/admin/tiers/${id}/users`, { params }),
+  
+  // User tier management
+  getUserTier: (username) => api.get(`/admin/users/${username}/tier`),
+  assignUserTier: (username, data) => api.put(`/admin/users/${username}/tier`, data),
+  removeUserTier: (username) => api.delete(`/admin/users/${username}/tier`),
+  
+  // User usage stats
+  getUserUsage: (username, params) => api.get(`/admin/users/${username}/usage`, { params }),
+  
+  // System usage analytics
+  getSystemUsage: (params) => api.get('/admin/usage', { params }),
+  triggerAggregation: (date) => api.post('/admin/usage/aggregate', { date }),
+  triggerCleanup: (days) => api.post('/admin/usage/cleanup', { days }),
+};
+
+// User self-service API
+export const meApi = {
+  getTier: () => api.get('/me/tier'),
+  getUsage: (params) => api.get('/me/usage', { params }),
+  getUsageSummary: () => api.get('/me/usage/summary'),
 };
 
 // Admin API

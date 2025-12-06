@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../stores/toastStore';
+import TierCard from '../components/user/TierCard';
 import {
   User,
   LogOut,
@@ -249,6 +250,9 @@ export default function Profile() {
           </a>
         </div>
       </div>
+
+      {/* Tier & Usage Section */}
+      <TierCard />
 
       {/* Data Requests Section */}
       <div className="bg-twitch-gray rounded-lg border border-gray-700">
