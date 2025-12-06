@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { OAuthUser, UserSession, UserRequest } from '../models/OAuthUser.js';
 import { requireUserAuth, generateAccessToken, REFRESH_TOKEN_EXPIRES_DAYS } from '../middleware/auth.js';
 import logger from '../utils/logger.js';
+import discordWebhookService from '../services/discordWebhookService.js';
 
 const router = Router();
 
@@ -123,9 +124,25 @@ router.get('/callback', async (req, res) => {
     const userData = await userResponse.json();
     const twitchUser = userData.data[0];
 
+    // Check if this is a new user
+    const existingUser = await OAuthUser.getByTwitchId(twitchUser.id);
+    const isNewUser = !existingUser;
+
     // Create or update user in database
     const user = await OAuthUser.upsertFromTwitch(twitchUser, tokens);
     logger.info(`User ${user.username} logged in via Twitch OAuth`);
+
+    // Trigger webhook for new user signups
+    if (isNewUser) {
+      discordWebhookService.sendUserSignup({
+        username: user.username,
+        displayName: user.display_name || user.username,
+        twitchId: user.twitch_id,
+        profileImageUrl: user.profile_image_url,
+        email: user.email,
+        timestamp: new Date()
+      }).catch(err => logger.debug('Webhook error (user signup):', err.message));
+    }
 
     // Generate our JWT access token
     const accessToken = generateAccessToken(user);
@@ -321,6 +338,15 @@ router.post('/requests', requireUserAuth, async (req, res) => {
 
     const request = await UserRequest.create(req.user.id, type, reason);
     logger.info(`User ${req.user.username} created ${type} request`);
+
+    // Trigger webhook for data requests (admin notification)
+    discordWebhookService.sendDataRequest({
+      username: req.user.username,
+      displayName: req.user.display_name || req.user.username,
+      requestType: type,
+      reason: reason || null,
+      timestamp: new Date()
+    }).catch(err => logger.debug('Webhook error (data request):', err.message));
 
     res.status(201).json({
       message: `${type.charAt(0).toUpperCase() + type.slice(1)} request submitted`,

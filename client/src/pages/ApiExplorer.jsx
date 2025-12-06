@@ -254,6 +254,28 @@ const apiEndpoints = [
       { method: 'DELETE', path: '/admin/oauth-users/:id', description: 'Delete OAuth user', params: ['id'], auth: 'apiKey' },
     ]
   },
+  {
+    category: 'Webhooks',
+    icon: Zap,
+    color: 'fuchsia',
+    description: 'Discord webhook management for notifications',
+    endpoints: [
+      { method: 'GET', path: '/webhooks', description: 'List user webhooks', params: [], auth: 'bearer' },
+      { method: 'POST', path: '/webhooks', description: 'Create user webhook', params: [], body: { name: 'My Webhook', webhookType: 'mod_action', webhookUrl: 'https://discord.com/api/webhooks/...', config: { action_types: ['ban', 'timeout'] } }, auth: 'bearer' },
+      { method: 'PUT', path: '/webhooks/:id', description: 'Update user webhook', params: ['id'], body: { name: 'Updated Name', enabled: true }, auth: 'bearer' },
+      { method: 'DELETE', path: '/webhooks/:id', description: 'Delete user webhook', params: ['id'], auth: 'bearer' },
+      { method: 'POST', path: '/webhooks/:id/test', description: 'Test user webhook', params: ['id'], auth: 'bearer' },
+      { method: 'GET', path: '/webhooks/urls', description: 'List saved webhook URLs', params: [], auth: 'bearer' },
+      { method: 'POST', path: '/webhooks/urls', description: 'Save webhook URL to bank', params: [], body: { name: 'Mod Alerts', webhookUrl: 'https://discord.com/api/webhooks/...' }, auth: 'bearer' },
+      { method: 'PUT', path: '/webhooks/urls/:id', description: 'Update saved URL name', params: ['id'], body: { name: 'New Name' }, auth: 'bearer' },
+      { method: 'DELETE', path: '/webhooks/urls/:id', description: 'Delete saved URL', params: ['id'], auth: 'bearer' },
+      { method: 'GET', path: '/webhooks/admin', description: 'List admin webhooks', params: [], auth: 'bearer' },
+      { method: 'POST', path: '/webhooks/admin', description: 'Create admin webhook', params: [], body: { name: 'Admin Alerts', webhookType: 'user_signup', webhookUrl: 'https://discord.com/api/webhooks/...' }, auth: 'bearer' },
+      { method: 'PUT', path: '/webhooks/admin/:id', description: 'Update admin webhook', params: ['id'], body: { name: 'Updated Name', enabled: true }, auth: 'bearer' },
+      { method: 'DELETE', path: '/webhooks/admin/:id', description: 'Delete admin webhook', params: ['id'], auth: 'bearer' },
+      { method: 'POST', path: '/webhooks/admin/:id/test', description: 'Test admin webhook', params: ['id'], auth: 'bearer' },
+    ]
+  },
 ];
 
 // Method colors

@@ -23,6 +23,7 @@
   - [Chat](#chat)
   - [User Data Requests](#user-data-requests)
   - [Admin User Request Management](#admin-user-request-management)
+  - [Webhooks](#webhooks-discord-notifications)
 - [WebSocket API](#websocket-api)
 - [Error Handling](#error-handling)
 - [Examples](#examples)
@@ -2956,6 +2957,325 @@ Delete an OAuth user and all their associated data (sessions, requests).
 
 ---
 
+### Webhooks (Discord Notifications)
+
+Webhooks allow users and admins to receive Discord notifications for various events. Users can create webhooks for their tracked users, mod actions, and stream events. Admins can create webhooks for system events.
+
+#### List User Webhooks
+`GET /api/webhooks`
+
+**Authentication:** Bearer token required
+
+Get all webhooks for the authenticated user.
+
+**Response:**
+```json
+{
+  "webhooks": [
+    {
+      "id": 1,
+      "name": "My Tracked Users",
+      "event_type": "tracked_user_message",
+      "config": {
+        "tracked_usernames": ["streamer1", "streamer2"]
+      },
+      "enabled": true,
+      "consecutive_failures": 0,
+      "last_triggered_at": "2025-01-16T10:30:00.000Z",
+      "created_at": "2025-01-15T08:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+#### Create User Webhook
+`POST /api/webhooks`
+
+**Authentication:** Bearer token required
+
+Create a new webhook for the authenticated user. Maximum 10 webhooks per user.
+
+**Request Body:**
+```json
+{
+  "name": "My Mod Action Alerts",
+  "event_type": "mod_action",
+  "webhook_url": "https://discord.com/api/webhooks/123456789/token",
+  "config": {
+    "action_types": ["ban", "timeout"],
+    "channels": ["streamer1", "streamer2"]
+  }
+}
+```
+
+**Event Types:**
+
+| Type | Description | Config Options |
+|------|-------------|----------------|
+| `tracked_user_message` | Messages from specific users | `tracked_usernames`: array of usernames |
+| `mod_action` | Bans and timeouts | `action_types`: ["ban", "timeout"], `channels`: array or null for all |
+| `channel_live` | Channel goes live | `channels`: array of channel names |
+| `channel_offline` | Channel goes offline | `channels`: array of channel names |
+| `channel_game_change` | Game/category changes | `channels`: array of channel names |
+
+**Response:**
+```json
+{
+  "message": "Webhook created",
+  "webhook": {
+    "id": 1,
+    "name": "My Mod Action Alerts",
+    "event_type": "mod_action",
+    "enabled": true
+  }
+}
+```
+
+**Errors:**
+- `400`: Invalid event type or missing required fields
+- `400`: Invalid Discord webhook URL format
+- `400`: Maximum 10 webhooks allowed
+
+---
+
+#### Update User Webhook
+`PUT /api/webhooks/:id`
+
+**Authentication:** Bearer token required
+
+Update an existing webhook. Cannot change webhook URL after creation.
+
+**Request Body:**
+```json
+{
+  "name": "Updated Name",
+  "config": {
+    "action_types": ["ban"],
+    "channels": null
+  },
+  "enabled": true
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Webhook updated",
+  "webhook": { ... }
+}
+```
+
+---
+
+#### Delete User Webhook
+`DELETE /api/webhooks/:id`
+
+**Authentication:** Bearer token required
+
+**Response:**
+```json
+{
+  "message": "Webhook deleted"
+}
+```
+
+---
+
+#### Test User Webhook
+`POST /api/webhooks/:id/test`
+
+**Authentication:** Bearer token required
+
+Send a test notification to verify the webhook is working.
+
+**Response:**
+```json
+{
+  "message": "Test notification sent"
+}
+```
+
+**Errors:**
+- `400`: Webhook is disabled
+- `500`: Failed to send test notification
+
+---
+
+### Webhook URL Bank
+
+Saved webhook URLs allow users to store Discord webhook URLs for quick reuse when creating webhooks.
+
+#### List Saved URLs
+`GET /api/webhooks/urls`
+
+**Authentication:** Bearer token required
+
+Get all saved webhook URLs for the authenticated user.
+
+**Response:**
+```json
+{
+  "urls": [
+    {
+      "id": 1,
+      "name": "Mod Alerts Channel",
+      "webhook_url_masked": "****abcd1234",
+      "created_at": "2025-01-15T08:00:00.000Z",
+      "last_used_at": "2025-01-16T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+#### Save Webhook URL
+`POST /api/webhooks/urls`
+
+**Authentication:** Bearer token required
+
+Save a webhook URL to the user's bank. Maximum 20 URLs per user (configurable).
+
+**Request Body:**
+```json
+{
+  "name": "Mod Alerts Channel",
+  "webhookUrl": "https://discord.com/api/webhooks/123456789/token"
+}
+```
+
+**Response:**
+```json
+{
+  "url": {
+    "id": 1,
+    "name": "Mod Alerts Channel",
+    "webhook_url_masked": "****token"
+  }
+}
+```
+
+**Errors:**
+- `400`: Invalid Discord webhook URL
+- `400`: Maximum URLs limit reached
+
+---
+
+#### Update Saved URL
+`PUT /api/webhooks/urls/:id`
+
+**Authentication:** Bearer token required
+
+Update the name of a saved webhook URL.
+
+**Request Body:**
+```json
+{
+  "name": "New Name"
+}
+```
+
+---
+
+#### Delete Saved URL
+`DELETE /api/webhooks/urls/:id`
+
+**Authentication:** Bearer token required
+
+Delete a saved webhook URL from the bank.
+
+---
+
+#### List Admin Webhooks
+`GET /api/webhooks/admin`
+
+**Authentication:** Bearer token (admin required)
+
+Get all admin webhooks for system events.
+
+**Response:**
+```json
+{
+  "webhooks": [
+    {
+      "id": 1,
+      "name": "Signup Alerts",
+      "event_type": "user_signup",
+      "enabled": true,
+      "last_triggered_at": "2025-01-16T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+#### Create Admin Webhook
+`POST /api/webhooks/admin`
+
+**Authentication:** Bearer token (admin required)
+
+**Request Body:**
+```json
+{
+  "name": "Admin Alerts",
+  "event_type": "user_signup",
+  "webhook_url": "https://discord.com/api/webhooks/123456789/token"
+}
+```
+
+**Admin Event Types:**
+
+| Type | Description |
+|------|-------------|
+| `user_signup` | New user registers via OAuth |
+| `data_request` | User requests data export or deletion |
+| `system_event` | Important system events |
+| `error_alert` | Critical errors |
+
+**Response:**
+```json
+{
+  "message": "Admin webhook created",
+  "webhook": { ... }
+}
+```
+
+---
+
+#### Update Admin Webhook
+`PUT /api/webhooks/admin/:id`
+
+**Authentication:** Bearer token (admin required)
+
+**Request Body:**
+```json
+{
+  "name": "Updated Name",
+  "enabled": true
+}
+```
+
+---
+
+#### Delete Admin Webhook
+`DELETE /api/webhooks/admin/:id`
+
+**Authentication:** Bearer token (admin required)
+
+---
+
+#### Test Admin Webhook
+`POST /api/webhooks/admin/:id/test`
+
+**Authentication:** Bearer token (admin required)
+
+Send a test notification to verify the webhook.
+
+---
+
 ## WebSocket API
 
 The WebSocket API provides real-time updates for chat messages and moderation events using Socket.IO.
@@ -3904,6 +4224,16 @@ class ChatterboxWebSocket {
 | POST | `/api/admin/user-requests/:id/deny` | Deny request (Admin) |
 | GET | `/api/admin/oauth-users` | List OAuth users (Admin) |
 | POST | `/api/admin/oauth-users/:id/admin` | Set user admin status (Admin) |
+| GET | `/api/webhooks` | List user webhooks (Bearer auth) |
+| POST | `/api/webhooks` | Create user webhook (Bearer auth) |
+| PUT | `/api/webhooks/:id` | Update user webhook (Bearer auth) |
+| DELETE | `/api/webhooks/:id` | Delete user webhook (Bearer auth) |
+| POST | `/api/webhooks/:id/test` | Test user webhook (Bearer auth) |
+| GET | `/api/webhooks/admin` | List admin webhooks (Admin) |
+| POST | `/api/webhooks/admin` | Create admin webhook (Admin) |
+| PUT | `/api/webhooks/admin/:id` | Update admin webhook (Admin) |
+| DELETE | `/api/webhooks/admin/:id` | Delete admin webhook (Admin) |
+| POST | `/api/webhooks/admin/:id/test` | Test admin webhook (Admin) |
 
 ### WebSocket Events Quick Reference
 

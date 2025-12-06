@@ -19,7 +19,8 @@ import {
   PanelLeft,
   Code,
   Server,
-  Heart
+  Heart,
+  Webhook
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -103,6 +104,26 @@ function Sidebar() {
               >
                 <Heart className="w-5 h-5 flex-shrink-0" />
                 {!sidebarCollapsed && <span>Following</span>}
+              </NavLink>
+            </li>
+          )}
+          
+          {/* Webhooks - only show when authenticated */}
+          {isAuthenticated && (
+            <li>
+              <NavLink
+                to="/webhooks"
+                title={sidebarCollapsed ? 'Webhooks' : undefined}
+                className={({ isActive }) =>
+                  `flex items-center ${sidebarCollapsed ? 'justify-center' : 'space-x-3'} px-3 py-2 rounded-md transition-colors ${
+                    isActive
+                      ? 'bg-twitch-purple text-white'
+                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                  }`
+                }
+              >
+                <Webhook className="w-5 h-5 flex-shrink-0" />
+                {!sidebarCollapsed && <span>Webhooks</span>}
               </NavLink>
             </li>
           )}

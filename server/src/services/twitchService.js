@@ -3,6 +3,7 @@ import Channel from '../models/Channel.js';
 import User from '../models/User.js';
 import Message from '../models/Message.js';
 import logger from '../utils/logger.js';
+import discordWebhookService from './discordWebhookService.js';
 
 class TwitchService {
   constructor(archiveService, websocketService) {
@@ -211,6 +212,15 @@ class TwitchService {
       reply_to_username: replyToUsername,
       mentioned_users: mentionedUsers.length > 0 ? mentionedUsers : null
     });
+
+    // Trigger Discord webhooks for tracked users (async, non-blocking)
+    discordWebhookService.sendTrackedUserMessage({
+      username: userRecord.username,
+      displayName: userRecord.display_name,
+      message,
+      channelName,
+      timestamp: messageData.timestamp
+    }).catch(err => logger.debug('Webhook error (tracked user):', err.message));
   }
 
   /**
@@ -243,8 +253,11 @@ class TwitchService {
     const channelRecord = await Channel.findOrCreate(channelName);
     const targetUser = await User.findOrCreate(username);
     
-    // Get the user's last message in this channel
-    const lastMessage = await Message.getLastUserMessage(channelRecord.id, targetUser.id);
+    // Get the user's last message - check buffer first (may not be flushed yet), then database
+    let lastMessage = this.archiveService.getLastBufferedMessage(channelRecord.id, targetUser.id, username);
+    if (!lastMessage) {
+      lastMessage = await Message.getLastUserMessage(channelRecord.id, targetUser.id);
+    }
     
     const modAction = {
       channelId: channelRecord.id,
@@ -277,6 +290,18 @@ class TwitchService {
     
     // Broadcast to global subscribers (dashboard)
     this.websocketService.broadcastGlobalModAction(enrichedAction);
+
+    // Trigger Discord webhooks for mod actions (async, non-blocking)
+    discordWebhookService.sendModAction({
+      actionType: 'ban',
+      targetUsername: username,
+      targetDisplayName: targetUser.display_name,
+      channelName,
+      reason: reason || null,
+      moderatorName: null,
+      lastMessage: lastMessage?.message_text || null,
+      timestamp: new Date()
+    }).catch(err => logger.debug('Webhook error (mod action):', err.message));
     
     logger.info(`User ${username} banned in ${channelName}`);
   }
@@ -290,8 +315,11 @@ class TwitchService {
     const channelRecord = await Channel.findOrCreate(channelName);
     const targetUser = await User.findOrCreate(username);
     
-    // Get the user's last message in this channel
-    const lastMessage = await Message.getLastUserMessage(channelRecord.id, targetUser.id);
+    // Get the user's last message - check buffer first (may not be flushed yet), then database
+    let lastMessage = this.archiveService.getLastBufferedMessage(channelRecord.id, targetUser.id, username);
+    if (!lastMessage) {
+      lastMessage = await Message.getLastUserMessage(channelRecord.id, targetUser.id);
+    }
     
     const modAction = {
       channelId: channelRecord.id,
@@ -327,6 +355,19 @@ class TwitchService {
     
     // Broadcast to global subscribers (dashboard)
     this.websocketService.broadcastGlobalModAction(enrichedAction);
+
+    // Trigger Discord webhooks for mod actions (async, non-blocking)
+    discordWebhookService.sendModAction({
+      actionType: 'timeout',
+      targetUsername: username,
+      targetDisplayName: targetUser.display_name,
+      channelName,
+      reason: reason || null,
+      duration,
+      moderatorName: null,
+      lastMessage: lastMessage?.message_text || null,
+      timestamp: new Date()
+    }).catch(err => logger.debug('Webhook error (mod action):', err.message));
     
     logger.info(`User ${username} timed out for ${duration}s in ${channelName}`);
   }

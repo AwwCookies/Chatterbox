@@ -44,6 +44,11 @@ const DEFAULT_CONFIG = {
   'analytics.enabled': true,
   'analytics.retentionDays': 30,
   'analytics.sampleRate': 1.0, // 1.0 = 100% of requests
+  
+  // Webhooks
+  'webhooks.maxPerUser': 10,
+  'webhooks.maxUrlsPerUser': 20,
+  'webhooks.maxTrackedUsernames': 50,
 };
 
 // In-memory cache of config
@@ -265,6 +270,9 @@ class ConfigService {
       'analytics.enabled': 'Enable traffic analytics logging',
       'analytics.retentionDays': 'Days to retain analytics data',
       'analytics.sampleRate': 'Fraction of requests to log (0.0-1.0)',
+      'webhooks.maxPerUser': 'Maximum webhooks allowed per user',
+      'webhooks.maxUrlsPerUser': 'Maximum saved webhook URLs per user',
+      'webhooks.maxTrackedUsernames': 'Maximum tracked usernames per webhook',
     };
     return descriptions[key] || '';
   }

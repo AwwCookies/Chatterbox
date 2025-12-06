@@ -41,7 +41,9 @@ api.interceptors.request.use((config) => {
   // Import auth store dynamically to avoid circular deps
   const needsBearerAuth = (
     (config.url?.startsWith('/oauth/') && !config.url?.includes('/login') && !config.url?.includes('/callback') && !config.url?.includes('/refresh')) ||
-    config.url?.startsWith('/chat/')
+    config.url?.startsWith('/chat/') ||
+    config.url?.startsWith('/webhooks') ||
+    config.url?.startsWith('/admin/oauth-users')
   );
   
   if (needsBearerAuth) {
@@ -164,6 +166,36 @@ export const chatApi = {
   sendMessage: (channelName, message, replyParentMessageId = null) => 
     api.post('/chat/send', { channelName, message, replyParentMessageId }),
   getPermissions: (channel) => api.get(`/chat/permissions/${channel}`),
+};
+
+// Webhooks API
+export const webhooksApi = {
+  // User webhooks
+  getAll: () => api.get('/webhooks'),
+  create: (data) => api.post('/webhooks', data),
+  update: (id, data) => api.put(`/webhooks/${id}`, data),
+  delete: (id) => api.delete(`/webhooks/${id}`),
+  test: (id) => api.post(`/webhooks/${id}/test`),
+  
+  // Saved URL bank
+  getSavedUrls: () => api.get('/webhooks/urls'),
+  saveUrl: (data) => api.post('/webhooks/urls', data),
+  updateSavedUrl: (id, data) => api.put(`/webhooks/urls/${id}`, data),
+  deleteSavedUrl: (id) => api.delete(`/webhooks/urls/${id}`),
+  
+  // Admin webhooks
+  getAdminWebhooks: () => api.get('/webhooks/admin'),
+  createAdminWebhook: (data) => api.post('/webhooks/admin', data),
+  updateAdminWebhook: (id, data) => api.put(`/webhooks/admin/${id}`, data),
+  deleteAdminWebhook: (id) => api.delete(`/webhooks/admin/${id}`),
+  testAdminWebhook: (id) => api.post(`/webhooks/admin/${id}/test`),
+  
+  // Aliases for AdminWebhooksTab compatibility
+  adminGetAll: () => api.get('/webhooks/admin'),
+  adminCreate: (data) => api.post('/webhooks/admin', data),
+  adminUpdate: (id, data) => api.put(`/webhooks/admin/${id}`, data),
+  adminDelete: (id) => api.delete(`/webhooks/admin/${id}`),
+  adminTest: (id) => api.post(`/webhooks/admin/${id}/test`),
 };
 
 // Admin API

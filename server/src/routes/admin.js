@@ -912,9 +912,10 @@ router.post('/oauth-users/:id/admin', requireAuth, async (req, res) => {
  * DELETE /api/admin/oauth-users/:id
  * Delete an OAuth user and their data
  */
-router.delete('/oauth-users/:id', requireAuth, async (req, res) => {
+router.delete('/oauth-users/:id', requireUserAuth, requireAdmin, async (req, res) => {
   try {
     const userId = parseInt(req.params.id);
+    logger.info(`Admin ${req.user.username} attempting to delete OAuth user ID: ${userId}`);
 
     // Don't allow deleting yourself
     if (req.user.id === userId) {
@@ -925,13 +926,26 @@ router.delete('/oauth-users/:id', requireAuth, async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+    logger.info(`Found user to delete: ${user.username} (twitch_id: ${user.twitch_id})`);
 
+    // Delete any associated chat data first (from users table)
+    if (user.twitch_id) {
+      logger.info(`Deleting chat data for twitch_id: ${user.twitch_id}`);
+      await executeUserDeletion(user.twitch_id, user.username, false);
+      logger.info(`Chat data deleted for ${user.username}`);
+    }
+
+    // Now delete the OAuth user
+    logger.info(`Deleting OAuth user record for ID: ${userId}`);
     await OAuthUser.deleteUser(userId);
     logger.info(`OAuth user ${user.username} (ID: ${userId}) deleted by admin ${req.user.username}`);
 
     res.json({ message: 'User deleted successfully' });
   } catch (error) {
-    logger.error('Error deleting OAuth user:', error.message);
+    logger.error('Error deleting OAuth user - Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    logger.error('Error message:', error?.message);
+    logger.error('Error stack:', error?.stack);
+    logger.error('Error name:', error?.name);
     res.status(500).json({ error: 'Failed to delete user' });
   }
 });
@@ -1006,8 +1020,8 @@ async function generateUserExport(twitchId, username) {
 }
 
 // Helper function to execute user data deletion
-async function executeUserDeletion(twitchId, username) {
-  // Find user by twitch_id or username
+async function executeUserDeletion(twitchId, username, deleteOAuthAccount = true) {
+  // Find user by twitch_id or username in the messages/users table
   let user = null;
   
   if (twitchId) {
@@ -1026,10 +1040,19 @@ async function executeUserDeletion(twitchId, username) {
     // Delete mod actions where user was the target
     await query('DELETE FROM mod_actions WHERE target_user_id = $1', [user.id]);
     
-    // Optionally delete the user record itself
+    // Delete the user record itself
     await query('DELETE FROM users WHERE id = $1', [user.id]);
     
-    logger.info(`Deleted all data for user ${username} (${user.id})`);
+    logger.info(`Deleted all chat data for user ${username} (${user.id})`);
+  }
+  
+  // Also delete the OAuth user account if requested
+  if (deleteOAuthAccount && twitchId) {
+    const oauthUser = await query('SELECT id FROM oauth_users WHERE twitch_id = $1', [twitchId]);
+    if (oauthUser.rows[0]) {
+      await OAuthUser.deleteUser(oauthUser.rows[0].id);
+      logger.info(`Deleted OAuth account for user ${username} (twitch_id: ${twitchId})`);
+    }
   }
 }
 

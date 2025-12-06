@@ -12,6 +12,7 @@ const CONFIG_CATEGORIES = {
   'User Requests': 'userRequests.',
   'Security': 'security.',
   'Analytics': 'analytics.',
+  'Webhooks': 'webhooks.',
 };
 
 export default function ServerSettingsTab() {

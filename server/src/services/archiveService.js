@@ -148,6 +148,24 @@ class ArchiveService {
       isProcessing: this.isProcessing
     };
   }
+
+  /**
+   * Get the last message for a user in a channel from the buffer
+   * This is useful for mod actions where the message may not have been flushed yet
+   */
+  getLastBufferedMessage(channelId, userId, username) {
+    // Search buffer in reverse (most recent first)
+    for (let i = this.messageBuffer.length - 1; i >= 0; i--) {
+      const msg = this.messageBuffer[i];
+      if (msg.channelId === channelId && (msg.userId === userId || msg.username?.toLowerCase() === username?.toLowerCase())) {
+        return {
+          message_text: msg.messageText,
+          timestamp: msg.timestamp
+        };
+      }
+    }
+    return null;
+  }
 }
 
 export default ArchiveService;

@@ -24,6 +24,7 @@ import WebSocketService from './services/websocketService.js';
 import TwitchService from './services/twitchService.js';
 import twitchApiService from './services/twitchApiService.js';
 import ConfigService from './services/configService.js';
+import discordWebhookService from './services/discordWebhookService.js';
 
 // Middleware
 import { 
@@ -118,6 +119,7 @@ app.use('/api/utils', utilsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/oauth', oauthRouter);
 app.use('/api/chat', (await import('./routes/chat.js')).default);
+app.use('/api/webhooks', (await import('./routes/webhooks.js')).default);
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
@@ -426,6 +428,7 @@ const startServer = async () => {
           // Broadcast if live status changed or viewer count changed significantly
           const liveChanged = current.isLive !== previous.isLive;
           const viewersChanged = current.isLive && Math.abs((current.viewerCount || 0) - (previous.viewerCount || 0)) > 100;
+          const gameChanged = previous.gameName && current.gameName && previous.gameName !== current.gameName;
           
           if (liveChanged || viewersChanged || !lastStreamStatuses[nameLower]) {
             websocketService.broadcastChannelStatus({
@@ -438,6 +441,44 @@ const startServer = async () => {
               started_at: current.startedAt || null,
               profile_image_url: profile.profileImageUrl || null,
             });
+          }
+
+          // Trigger Discord webhooks for stream status changes (only if we have previous state)
+          if (lastStreamStatuses[nameLower]) {
+            // Channel went live
+            if (current.isLive && !previous.isLive) {
+              discordWebhookService.sendChannelLive({
+                channelName: channel.name,
+                displayName: channel.display_name || channel.name,
+                title: current.title || 'No title',
+                gameName: current.gameName || 'Just Chatting',
+                viewerCount: current.viewerCount || 0,
+                profileImageUrl: profile.profileImageUrl || null,
+                timestamp: new Date()
+              }).catch(err => logger.debug('Webhook error (channel live):', err.message));
+            }
+            
+            // Channel went offline
+            if (!current.isLive && previous.isLive) {
+              discordWebhookService.sendChannelOffline({
+                channelName: channel.name,
+                displayName: channel.display_name || channel.name,
+                profileImageUrl: profile.profileImageUrl || null,
+                timestamp: new Date()
+              }).catch(err => logger.debug('Webhook error (channel offline):', err.message));
+            }
+            
+            // Game changed while live
+            if (gameChanged && current.isLive) {
+              discordWebhookService.sendGameChange({
+                channelName: channel.name,
+                displayName: channel.display_name || channel.name,
+                previousGame: previous.gameName,
+                newGame: current.gameName,
+                profileImageUrl: profile.profileImageUrl || null,
+                timestamp: new Date()
+              }).catch(err => logger.debug('Webhook error (game change):', err.message));
+            }
           }
         }
         

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Server, FileText, Settings, Activity, Shield, Users } from 'lucide-react';
+import { Server, FileText, Settings, Activity, Shield, Users, Webhook } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import ServerStatusTab from '../components/admin/ServerStatusTab';
 import ServerSettingsTab from '../components/admin/ServerSettingsTab';
@@ -8,6 +8,7 @@ import TrafficAnalyticsTab from '../components/admin/TrafficAnalyticsTab';
 import IpManagementTab from '../components/admin/IpManagementTab';
 import UserRequestsTab from '../components/admin/UserRequestsTab';
 import UserManagementTab from '../components/admin/UserManagementTab';
+import AdminWebhooksTab from '../components/admin/AdminWebhooksTab';
 
 const tabs = [
   { id: 'status', label: 'Server Status', icon: Server },
@@ -16,6 +17,7 @@ const tabs = [
   { id: 'ip-management', label: 'IP Management', icon: Shield },
   { id: 'users', label: 'User Management', icon: Users },
   { id: 'requests', label: 'User Requests', icon: FileText },
+  { id: 'webhooks', label: 'Webhooks', icon: Webhook },
 ];
 
 function ServerAdmin() {
@@ -55,6 +57,7 @@ function ServerAdmin() {
       {activeTab === 'ip-management' && <IpManagementTab />}
       {activeTab === 'users' && <UserManagementTab />}
       {activeTab === 'requests' && <UserRequestsTab />}
+      {activeTab === 'webhooks' && <AdminWebhooksTab />}
     </div>
   );
 }
