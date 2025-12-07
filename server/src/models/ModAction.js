@@ -15,15 +15,16 @@ class ModAction {
       reason = null,
       timestamp,
       relatedMessageId = null,
-      metadata = {}
+      metadata = {},
+      lastMessage = null
     } = actionData;
     
     const result = await query(
       `INSERT INTO mod_actions 
-       (channel_id, moderator_id, target_user_id, action_type, duration_seconds, reason, timestamp, related_message_id, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (channel_id, moderator_id, target_user_id, action_type, duration_seconds, reason, timestamp, related_message_id, metadata, last_message)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [channelId, moderatorId, targetUserId, actionType, durationSeconds, reason, timestamp, relatedMessageId, JSON.stringify(metadata)]
+      [channelId, moderatorId, targetUserId, actionType, durationSeconds, reason, timestamp, relatedMessageId, JSON.stringify(metadata), lastMessage]
     );
     
     logger.info(`Mod action recorded: ${actionType} on user ${targetUserId} in channel ${channelId}`);

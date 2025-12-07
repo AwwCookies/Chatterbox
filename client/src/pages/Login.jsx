@@ -1,13 +1,22 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { Twitch, AlertCircle, Loader2, LogIn, Shield, Download, Trash2 } from 'lucide-react';
+import { Twitch, AlertCircle, Loader2, LogIn, Shield, Download, Trash2, Lock } from 'lucide-react';
+import api from '../services/api';
 
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { isAuthenticated, getLoginUrl, isLoading } = useAuth();
   const [error, setError] = useState(null);
+  const [requireAuth, setRequireAuth] = useState(false);
+
+  useEffect(() => {
+    // Check if auth is required
+    api.get('/settings/require-auth')
+      .then(data => setRequireAuth(data.requireAuth))
+      .catch(() => setRequireAuth(false));
+  }, []);
 
   useEffect(() => {
     // If already logged in, redirect to home
@@ -124,11 +133,18 @@ export default function Login() {
           </div>
         </div>
 
-        {/* Back link */}
+        {/* Back link or auth required notice */}
         <div className="text-center">
-          <Link to="/" className="text-gray-400 hover:text-white text-sm">
-            ← Continue without signing in
-          </Link>
+          {requireAuth ? (
+            <div className="flex items-center justify-center gap-2 text-amber-400 text-sm">
+              <Lock className="w-4 h-4" />
+              <span>Login required to access this server</span>
+            </div>
+          ) : (
+            <Link to="/" className="text-gray-400 hover:text-white text-sm">
+              ← Continue without signing in
+            </Link>
+          )}
         </div>
       </div>
     </div>

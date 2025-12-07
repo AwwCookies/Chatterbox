@@ -39,6 +39,7 @@ const DEFAULT_CONFIG = {
   // Security
   'security.maxRequestBodySize': '10mb',
   'security.corsMaxAge': 86400,
+  'security.requireAuth': false, // OAuth-only mode - require authentication for all API requests
   
   // Analytics
   'analytics.enabled': true,
@@ -267,6 +268,7 @@ class ConfigService {
       'userRequests.downloadExpiry': 'Export download link expiry (ms)',
       'security.maxRequestBodySize': 'Maximum request body size',
       'security.corsMaxAge': 'CORS preflight cache max age (seconds)',
+      'security.requireAuth': 'Require OAuth authentication for all API requests',
       'analytics.enabled': 'Enable traffic analytics logging',
       'analytics.retentionDays': 'Days to retain analytics data',
       'analytics.sampleRate': 'Fraction of requests to log (0.0-1.0)',

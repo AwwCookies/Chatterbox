@@ -75,11 +75,19 @@ function ModActionCard({ action, expanded: defaultExpanded = false }) {
     }
   }, [isRecentAction]);
 
-  // Always fetch user's last message for compact view
+  // Check if action has stored last_message (new behavior) or message_text from WebSocket
+  const storedLastMessage = action.last_message || action.message_text;
+  
+  // Check if this is a new-style action (has last_message field, even if null)
+  // vs old-style action (doesn't have the field at all)
+  const hasLastMessageField = 'last_message' in action || 'message_text' in action;
+
+  // Only fetch user's last message for OLD records that don't have the last_message field
+  // New records with null last_message should show "No message captured"
   const { data: lastMessageData, isLoading: lastMessageLoading } = useQuery({
     queryKey: ['user', targetUsername, 'messages', { limit: 1, channel: channelName }],
     queryFn: () => usersApi.getMessages(targetUsername, { limit: 1, channel: channelName }).then(res => res.data),
-    enabled: !!targetUsername && queryReady,
+    enabled: !!targetUsername && queryReady && !hasLastMessageField,
     staleTime: 0, // Always consider stale for mod action cards
   });
 
@@ -98,7 +106,10 @@ function ModActionCard({ action, expanded: defaultExpanded = false }) {
     enabled: isExpanded && !!targetUsername,
   });
 
-  const lastMessage = lastMessageData?.messages?.[0];
+  // Use stored message from action, or fall back to queried message for old records
+  const lastMessage = storedLastMessage 
+    ? { message_text: storedLastMessage, timestamp: action.timestamp }
+    : lastMessageData?.messages?.[0];
 
   const messages = messagesData?.messages || [];
   const user = userData;
@@ -191,7 +202,7 @@ function ModActionCard({ action, expanded: defaultExpanded = false }) {
               {/* Last Message - Always visible in compact view */}
               {!isExpanded && (
                 <div className="mt-2 pt-2 border-t border-gray-700/50">
-                  {(!queryReady || lastMessageLoading) ? (
+                  {(!hasLastMessageField && (!queryReady || lastMessageLoading)) ? (
                     <div className="flex items-center space-x-2 text-xs text-gray-500">
                       <MessageSquare className="w-3 h-3" />
                       <span>Loading last message...</span>
@@ -200,7 +211,7 @@ function ModActionCard({ action, expanded: defaultExpanded = false }) {
                     <div className="text-xs">
                       <div className="flex items-center space-x-1 text-gray-500 mb-0.5">
                         <MessageSquare className="w-3 h-3" />
-                        <span>Last message ({formatRelative(lastMessage.timestamp)}):</span>
+                        <span>{hasLastMessageField ? 'Message at time of action:' : `Last message (${formatRelative(lastMessage.timestamp)}):`}</span>
                       </div>
                       <p className="text-gray-300 line-clamp-2 break-words">
                         <EmoteRenderer 
@@ -211,6 +222,11 @@ function ModActionCard({ action, expanded: defaultExpanded = false }) {
                           )} 
                         />
                       </p>
+                    </div>
+                  ) : hasLastMessageField ? (
+                    <div className="flex items-center space-x-2 text-xs text-gray-500">
+                      <MessageSquare className="w-3 h-3" />
+                      <span>No message captured at time of action</span>
                     </div>
                   ) : (
                     <div className="flex items-center space-x-2 text-xs text-gray-500">

@@ -55,6 +55,15 @@ api.interceptors.response.use(
   async (error) => {
     console.error('API Error:', error.response?.data || error.message);
     
+    // Handle AUTH_REQUIRED (OAuth-only mode)
+    if (error.response?.status === 401 && error.response?.data?.code === 'AUTH_REQUIRED') {
+      // Redirect to login page if not already there
+      if (!window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/auth')) {
+        window.location.href = '/login';
+      }
+      return Promise.reject(error);
+    }
+    
     // Handle rate limiting (429)
     if (error.response?.status === 429) {
       // Get retryAfter from response body first, then header, then default to 60
@@ -299,6 +308,12 @@ export const adminApi = {
   getLogStats: () => api.get('/admin/logs/stats', { requiresAuth: true }),
   streamLogs: (lastId) => api.get('/admin/logs/stream', { params: { lastId }, requiresAuth: true }),
   clearLogs: () => api.delete('/admin/logs'),
+  
+  // Database viewer (read-only)
+  getDatabaseTables: () => api.get('/admin/database/tables', { requiresAuth: true }),
+  getTableSchema: (tableName) => api.get(`/admin/database/tables/${tableName}/schema`, { requiresAuth: true }),
+  getTableData: (tableName, params) => api.get(`/admin/database/tables/${tableName}/data`, { params, requiresAuth: true }),
+  executeDatabaseQuery: (sql) => api.get('/admin/database/query', { params: { sql }, requiresAuth: true }),
 };
 
 export default api;

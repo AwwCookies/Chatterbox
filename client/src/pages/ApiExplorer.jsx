@@ -59,6 +59,7 @@ const apiEndpoints = [
     endpoints: [
       { method: 'GET', path: '/health', description: 'Health check', params: [], auth: 'none' },
       { method: 'GET', path: '/stats', description: 'System statistics', params: [], auth: 'none' },
+      { method: 'GET', path: '/settings/require-auth', description: 'Check if OAuth is required', params: [], auth: 'none' },
     ]
   },
   {
@@ -267,6 +268,18 @@ const apiEndpoints = [
       { method: 'GET', path: '/admin/logs/stats', description: 'Get log statistics', params: [], auth: 'apiKey' },
       { method: 'GET', path: '/admin/logs/stream', description: 'Stream new logs since ID', params: ['lastId'], auth: 'apiKey' },
       { method: 'DELETE', path: '/admin/logs', description: 'Clear all logs', params: [], auth: 'apiKey' },
+    ]
+  },
+  {
+    category: 'Admin - Database',
+    icon: Database,
+    color: 'cyan',
+    description: 'Read-only database viewer for inspecting tables and data',
+    endpoints: [
+      { method: 'GET', path: '/admin/db/tables', description: 'List all database tables', params: [], auth: 'apiKey' },
+      { method: 'GET', path: '/admin/db/tables/:name/schema', description: 'Get table schema (columns, constraints)', params: ['name'], auth: 'apiKey' },
+      { method: 'GET', path: '/admin/db/tables/:name/data', description: 'Get paginated table data', params: ['name', 'limit', 'offset', 'sort', 'order', 'search'], auth: 'apiKey' },
+      { method: 'POST', path: '/admin/db/query', description: 'Execute read-only SQL query', params: [], body: { query: 'SELECT * FROM users LIMIT 10' }, auth: 'apiKey' },
     ]
   },
   {

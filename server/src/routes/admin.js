@@ -1589,4 +1589,233 @@ router.delete('/ip-rules/:id', requireAuth, async (req, res) => {
   }
 });
 
+// ============ DATABASE VIEWER (Read-Only) ============
+
+/**
+ * GET /api/admin/database/tables
+ * Get list of all tables in the database
+ */
+router.get('/database/tables', requireAuth, async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT 
+        table_name,
+        pg_size_pretty(pg_total_relation_size(quote_ident(table_name))) as size,
+        (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = t.table_name AND table_schema = 'public') as column_count
+      FROM information_schema.tables t
+      WHERE table_schema = 'public' 
+        AND table_type = 'BASE TABLE'
+      ORDER BY table_name
+    `);
+
+    // Get row counts for each table
+    const tables = await Promise.all(result.rows.map(async (table) => {
+      try {
+        const countResult = await query(`SELECT COUNT(*) as count FROM "${table.table_name}"`);
+        return {
+          ...table,
+          row_count: parseInt(countResult.rows[0].count)
+        };
+      } catch {
+        return { ...table, row_count: 0 };
+      }
+    }));
+
+    res.json({ tables });
+  } catch (error) {
+    logger.error('Error fetching database tables:', error.message);
+    res.status(500).json({ error: 'Failed to fetch database tables' });
+  }
+});
+
+/**
+ * GET /api/admin/database/tables/:tableName/schema
+ * Get schema/columns for a specific table
+ */
+router.get('/database/tables/:tableName/schema', requireAuth, async (req, res) => {
+  try {
+    const { tableName } = req.params;
+    
+    // Validate table name to prevent SQL injection
+    const tableCheck = await query(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1`,
+      [tableName]
+    );
+    
+    if (tableCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Table not found' });
+    }
+
+    const columnsResult = await query(`
+      SELECT 
+        column_name,
+        data_type,
+        is_nullable,
+        column_default,
+        character_maximum_length
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = $1
+      ORDER BY ordinal_position
+    `, [tableName]);
+
+    // Get primary key columns
+    const pkResult = await query(`
+      SELECT a.attname as column_name
+      FROM pg_index i
+      JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+      WHERE i.indrelid = $1::regclass AND i.indisprimary
+    `, [tableName]);
+
+    const primaryKeys = pkResult.rows.map(r => r.column_name);
+
+    // Get foreign keys
+    const fkResult = await query(`
+      SELECT
+        kcu.column_name,
+        ccu.table_name AS foreign_table_name,
+        ccu.column_name AS foreign_column_name
+      FROM information_schema.table_constraints AS tc
+      JOIN information_schema.key_column_usage AS kcu
+        ON tc.constraint_name = kcu.constraint_name
+      JOIN information_schema.constraint_column_usage AS ccu
+        ON ccu.constraint_name = tc.constraint_name
+      WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = $1
+    `, [tableName]);
+
+    res.json({
+      tableName,
+      columns: columnsResult.rows.map(col => ({
+        ...col,
+        is_primary_key: primaryKeys.includes(col.column_name),
+        foreign_key: fkResult.rows.find(fk => fk.column_name === col.column_name) || null
+      }))
+    });
+  } catch (error) {
+    logger.error('Error fetching table schema:', error.message);
+    res.status(500).json({ error: 'Failed to fetch table schema' });
+  }
+});
+
+/**
+ * GET /api/admin/database/tables/:tableName/data
+ * Get data from a specific table (paginated, read-only)
+ */
+router.get('/database/tables/:tableName/data', requireAuth, async (req, res) => {
+  try {
+    const { tableName } = req.params;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 100);
+    const offset = parseInt(req.query.offset) || 0;
+    const orderBy = req.query.orderBy || 'id';
+    const orderDir = req.query.orderDir === 'asc' ? 'ASC' : 'DESC';
+    const search = req.query.search || '';
+
+    // Validate table name
+    const tableCheck = await query(
+      `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1`,
+      [tableName]
+    );
+    
+    if (tableCheck.rows.length === 0) {
+      return res.status(404).json({ error: 'Table not found' });
+    }
+
+    // Validate orderBy column exists
+    const colCheck = await query(
+      `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2`,
+      [tableName, orderBy]
+    );
+
+    const safeOrderBy = colCheck.rows.length > 0 ? orderBy : 'id';
+
+    // Get total count
+    const countResult = await query(`SELECT COUNT(*) as count FROM "${tableName}"`);
+    const total = parseInt(countResult.rows[0].count);
+
+    // Build query with optional search
+    let dataQuery = `SELECT * FROM "${tableName}"`;
+    const params = [];
+
+    if (search) {
+      // Get text columns for search
+      const textCols = await query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_schema = 'public' AND table_name = $1 
+        AND data_type IN ('text', 'character varying', 'varchar', 'char')
+      `, [tableName]);
+
+      if (textCols.rows.length > 0) {
+        const searchConditions = textCols.rows
+          .map((col, i) => `"${col.column_name}"::text ILIKE $${i + 1}`)
+          .join(' OR ');
+        dataQuery += ` WHERE ${searchConditions}`;
+        textCols.rows.forEach(() => params.push(`%${search}%`));
+      }
+    }
+
+    dataQuery += ` ORDER BY "${safeOrderBy}" ${orderDir} LIMIT ${limit} OFFSET ${offset}`;
+
+    const dataResult = await query(dataQuery, params);
+
+    res.json({
+      tableName,
+      rows: dataResult.rows,
+      total,
+      limit,
+      offset,
+      hasMore: offset + dataResult.rows.length < total
+    });
+  } catch (error) {
+    logger.error('Error fetching table data:', error.message);
+    res.status(500).json({ error: 'Failed to fetch table data' });
+  }
+});
+
+/**
+ * GET /api/admin/database/query
+ * Execute a read-only SQL query (SELECT only)
+ */
+router.get('/database/query', requireAuth, async (req, res) => {
+  try {
+    const { sql } = req.query;
+    
+    if (!sql) {
+      return res.status(400).json({ error: 'SQL query is required' });
+    }
+
+    // Only allow SELECT statements
+    const trimmedSql = sql.trim().toLowerCase();
+    if (!trimmedSql.startsWith('select')) {
+      return res.status(400).json({ error: 'Only SELECT queries are allowed' });
+    }
+
+    // Block dangerous keywords
+    const dangerousKeywords = ['insert', 'update', 'delete', 'drop', 'truncate', 'alter', 'create', 'grant', 'revoke'];
+    for (const keyword of dangerousKeywords) {
+      if (trimmedSql.includes(keyword)) {
+        return res.status(400).json({ error: `Query contains forbidden keyword: ${keyword}` });
+      }
+    }
+
+    // Add LIMIT if not present
+    let safeQuery = sql;
+    if (!trimmedSql.includes('limit')) {
+      safeQuery = `${sql} LIMIT 100`;
+    }
+
+    const startTime = Date.now();
+    const result = await query(safeQuery);
+    const executionTime = Date.now() - startTime;
+
+    res.json({
+      rows: result.rows,
+      rowCount: result.rowCount,
+      executionTime,
+      fields: result.fields?.map(f => ({ name: f.name, dataType: f.dataTypeID })) || []
+    });
+  } catch (error) {
+    logger.error('Error executing query:', error.message);
+    res.status(400).json({ error: error.message });
+  }
+});
+
 export default router;

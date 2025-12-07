@@ -39,6 +39,7 @@ import {
 } from './middleware/trafficMiddleware.js';
 import { createTrackingMiddleware } from './middleware/usageTracking.js';
 import { globalAuthRateLimit } from './middleware/tierLimits.js';
+import { requireAuthIfEnabled } from './middleware/auth.js';
 
 // Routes
 import messagesRouter from './routes/messages.js';
@@ -114,6 +115,15 @@ app.use((req, res, next) => {
   logger.debug(`${req.method} ${req.path}`);
   next();
 });
+
+// Endpoint to check if auth is required (needed before requireAuthIfEnabled)
+app.get('/api/settings/require-auth', (req, res) => {
+  const requireAuth = ConfigService.getSync('security.requireAuth', false);
+  res.json({ requireAuth });
+});
+
+// OAuth-only mode enforcement (must be after public endpoint definitions)
+app.use('/api', requireAuthIfEnabled);
 
 // Initialize services
 const archiveService = new ArchiveService();

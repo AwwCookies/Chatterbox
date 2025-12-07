@@ -2070,6 +2070,28 @@ Status will be `"unhealthy"` if database connection fails.
 
 ---
 
+#### Check Auth Required
+`GET /api/settings/require-auth`
+
+Check if OAuth authentication is required for all API requests (OAuth-only mode).
+
+**Response:**
+```json
+{
+  "requireAuth": false
+}
+```
+
+When `requireAuth` is `true`:
+- All API requests require valid authentication (Bearer token or API key)
+- Unauthenticated users are redirected to the login page
+- The following endpoints remain publicly accessible:
+  - `/api/health` - Health checks
+  - `/api/auth/*` - OAuth flow endpoints
+  - `/api/settings/require-auth` - This endpoint
+
+---
+
 #### System Statistics
 `GET /api/stats`
 
@@ -2968,6 +2990,170 @@ Clear all in-memory logs.
 ```json
 {
   "message": "Logs cleared"
+}
+```
+
+---
+
+### Database Viewer (Read-Only)
+
+Provides read-only access to database tables for administrative inspection. All operations are SELECT-only for safety.
+
+#### List Database Tables
+`GET /api/admin/database/tables`
+
+Get a list of all tables in the database with row counts and sizes.
+
+**Authentication:** Bearer token (admin) or X-API-Key required
+
+**Response:**
+```json
+{
+  "tables": [
+    {
+      "table_name": "messages",
+      "size": "2.5 GB",
+      "column_count": 12,
+      "row_count": 45000000
+    },
+    {
+      "table_name": "users",
+      "size": "128 MB",
+      "column_count": 8,
+      "row_count": 2500000
+    }
+  ]
+}
+```
+
+---
+
+#### Get Table Schema
+`GET /api/admin/database/tables/:tableName/schema`
+
+Get column definitions for a specific table including primary keys and foreign key relationships.
+
+**Authentication:** Bearer token (admin) or X-API-Key required
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tableName` | string | Name of the table |
+
+**Response:**
+```json
+{
+  "tableName": "messages",
+  "columns": [
+    {
+      "column_name": "id",
+      "data_type": "bigint",
+      "is_nullable": "NO",
+      "column_default": "nextval('messages_id_seq'::regclass)",
+      "character_maximum_length": null,
+      "is_primary_key": true,
+      "foreign_key": null
+    },
+    {
+      "column_name": "channel_id",
+      "data_type": "integer",
+      "is_nullable": "NO",
+      "column_default": null,
+      "character_maximum_length": null,
+      "is_primary_key": false,
+      "foreign_key": {
+        "column_name": "channel_id",
+        "foreign_table_name": "channels",
+        "foreign_column_name": "id"
+      }
+    }
+  ]
+}
+```
+
+---
+
+#### Get Table Data
+`GET /api/admin/database/tables/:tableName/data`
+
+Get paginated data from a specific table with sorting and search capabilities.
+
+**Authentication:** Bearer token (admin) or X-API-Key required
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `tableName` | string | Name of the table |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | number | 50 | Max rows to return (max 100) |
+| `offset` | number | 0 | Number of rows to skip |
+| `orderBy` | string | "id" | Column to sort by |
+| `orderDir` | string | "desc" | Sort direction: "asc" or "desc" |
+| `search` | string | | Search text columns |
+
+**Response:**
+```json
+{
+  "tableName": "users",
+  "rows": [
+    {
+      "id": 1,
+      "username": "example_user",
+      "display_name": "Example_User",
+      "created_at": "2025-01-15T10:30:00.000Z"
+    }
+  ],
+  "total": 2500000,
+  "limit": 50,
+  "offset": 0,
+  "hasMore": true
+}
+```
+
+---
+
+#### Execute SQL Query
+`GET /api/admin/database/query`
+
+Execute a read-only SQL query. Only SELECT statements are allowed.
+
+**Authentication:** Bearer token (admin) or X-API-Key required
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sql` | string | The SELECT query to execute |
+
+**Restrictions:**
+- Only SELECT queries are allowed
+- Results are limited to 100 rows if LIMIT is not specified
+- Forbidden keywords: INSERT, UPDATE, DELETE, DROP, TRUNCATE, ALTER, CREATE, GRANT, REVOKE
+
+**Response:**
+```json
+{
+  "rows": [
+    { "count": 45000000 }
+  ],
+  "rowCount": 1,
+  "executionTime": 52,
+  "fields": [
+    { "name": "count", "dataType": 20 }
+  ]
+}
+```
+
+**Error Response:**
+```json
+{
+  "error": "Only SELECT queries are allowed"
 }
 ```
 

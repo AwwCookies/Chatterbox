@@ -383,13 +383,16 @@ class TwitchService {
       lastMessage = await Message.getLastUserMessage(channelRecord.id, targetUser.id);
     }
     
+    const lastMessageText = lastMessage?.message_text || null;
+    
     const modAction = {
       channelId: channelRecord.id,
       moderatorId: null, // We don't always know the moderator
       targetUserId: targetUser.id,
       actionType: 'ban',
       reason: reason || null,
-      timestamp: new Date()
+      timestamp: new Date(),
+      lastMessage: lastMessageText
     };
 
     const savedAction = await this.archiveService.recordModAction(modAction);
@@ -445,6 +448,8 @@ class TwitchService {
       lastMessage = await Message.getLastUserMessage(channelRecord.id, targetUser.id);
     }
     
+    const lastMessageText = lastMessage?.message_text || null;
+    
     const modAction = {
       channelId: channelRecord.id,
       moderatorId: null,
@@ -452,7 +457,8 @@ class TwitchService {
       actionType: 'timeout',
       durationSeconds: duration,
       reason: reason || null,
-      timestamp: new Date()
+      timestamp: new Date(),
+      lastMessage: lastMessageText
     };
 
     const savedAction = await this.archiveService.recordModAction(modAction);

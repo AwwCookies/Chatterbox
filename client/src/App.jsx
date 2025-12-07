@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import Navbar from './components/layout/Navbar'
 import Sidebar from './components/layout/Sidebar'
 import Home from './pages/Home'
@@ -29,8 +29,26 @@ import AlphaDisclaimerModal from './components/common/AlphaDisclaimerModal'
 import { useEmotes } from './hooks/useEmotes'
 import { useSettingsStore } from './stores/settingsStore'
 import { useUIStore } from './stores/uiStore'
+import { useAuthStore } from './stores/authStore'
 import { useMobile, useViewportHeight } from './hooks/useMobile'
 import { MobileNavbar, MobileBottomNav, MobileDrawer, MobileSearch } from './components/mobile'
+import api from './services/api'
+
+// Component to protect routes when OAuth-only mode is enabled
+function RequireAuthWrapper({ children, requireAuth, isMobile }) {
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+  const location = useLocation();
+  
+  // Public paths that don't require auth even in OAuth-only mode
+  const publicPaths = ['/login', '/auth/callback'];
+  const isPublicPath = publicPaths.some(p => location.pathname.startsWith(p));
+  
+  if (requireAuth && !isAuthenticated && !isPublicPath) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  
+  return children;
+}
 
 function App() {
   // Initialize global emotes early
@@ -41,11 +59,21 @@ function App() {
   const settingsModalOpen = useUIStore(state => state.settingsModalOpen);
   const closeSettingsModal = useUIStore(state => state.closeSettingsModal);
   
+  // OAuth-only mode state
+  const [requireAuth, setRequireAuth] = useState(false);
+  
   // Mobile detection and state
   const { isMobile, isTablet } = useMobile();
   useViewportHeight(); // Sets --vh CSS variable
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  
+  // Check if OAuth-only mode is enabled
+  useEffect(() => {
+    api.get('/settings/require-auth')
+      .then(data => setRequireAuth(data.requireAuth))
+      .catch(() => setRequireAuth(false));
+  }, []);
   
   useEffect(() => {
     if (isLoaded) {
@@ -114,24 +142,26 @@ function App() {
             <Sidebar />
             <main className={`flex-1 p-6 transition-all duration-300 min-w-0 ${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}>
               <ErrorBoundary>
-                <Routes>
-                  <Route path="/" element={<Home />} />
-                  <Route path="/messages" element={<Messages />} />
-                  <Route path="/users" element={<Users />} />
-                  <Route path="/user/:username" element={<User />} />
-                  <Route path="/channel/:name" element={<Channel />} />
-                  <Route path="/moderation" element={<Moderation />} />
-                  <Route path="/live" element={<Live />} />
-                  <Route path="/channels" element={<Channels />} />
-                  <Route path="/admin" element={<ServerAdmin />} />
-                  <Route path="/api-explorer" element={<ApiExplorer />} />
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/auth/callback" element={<AuthCallback />} />
-                  <Route path="/following" element={<Following />} />
-                  <Route path="/profile" element={<Profile />} />
-                  <Route path="/webhooks" element={<Webhooks />} />
-                  <Route path="/watch/:channel" element={<Watch />} />
-                </Routes>
+                <RequireAuthWrapper requireAuth={requireAuth}>
+                  <Routes>
+                    <Route path="/" element={<Home />} />
+                    <Route path="/messages" element={<Messages />} />
+                    <Route path="/users" element={<Users />} />
+                    <Route path="/user/:username" element={<User />} />
+                    <Route path="/channel/:name" element={<Channel />} />
+                    <Route path="/moderation" element={<Moderation />} />
+                    <Route path="/live" element={<Live />} />
+                    <Route path="/channels" element={<Channels />} />
+                    <Route path="/admin" element={<ServerAdmin />} />
+                    <Route path="/api-explorer" element={<ApiExplorer />} />
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/auth/callback" element={<AuthCallback />} />
+                    <Route path="/following" element={<Following />} />
+                    <Route path="/profile" element={<Profile />} />
+                    <Route path="/webhooks" element={<Webhooks />} />
+                    <Route path="/watch/:channel" element={<Watch />} />
+                  </Routes>
+                </RequireAuthWrapper>
               </ErrorBoundary>
             </main>
           </div>
@@ -147,21 +177,23 @@ function App() {
           />
           <main className="pt-14 pb-16 min-h-screen">
             <ErrorBoundary>
-              <Routes>
-                <Route path="/" element={<Home isMobile />} />
-                <Route path="/messages" element={<Messages isMobile />} />
-                <Route path="/user/:username" element={<User isMobile />} />
-                <Route path="/channel/:name" element={<Channel isMobile />} />
-                <Route path="/moderation" element={<Moderation isMobile />} />
-                <Route path="/live" element={<Live isMobile />} />
-                <Route path="/channels" element={<Channels isMobile />} />
-                <Route path="/login" element={<Login isMobile />} />
-                <Route path="/auth/callback" element={<AuthCallback />} />
-                <Route path="/following" element={<Following isMobile />} />
-                <Route path="/profile" element={<Profile isMobile />} />
-                <Route path="/webhooks" element={<Webhooks />} />
-                <Route path="/watch/:channel" element={<Watch />} />
-              </Routes>
+              <RequireAuthWrapper requireAuth={requireAuth} isMobile>
+                <Routes>
+                  <Route path="/" element={<Home isMobile />} />
+                  <Route path="/messages" element={<Messages isMobile />} />
+                  <Route path="/user/:username" element={<User isMobile />} />
+                  <Route path="/channel/:name" element={<Channel isMobile />} />
+                  <Route path="/moderation" element={<Moderation isMobile />} />
+                  <Route path="/live" element={<Live isMobile />} />
+                  <Route path="/channels" element={<Channels isMobile />} />
+                  <Route path="/login" element={<Login isMobile />} />
+                  <Route path="/auth/callback" element={<AuthCallback />} />
+                  <Route path="/following" element={<Following isMobile />} />
+                  <Route path="/profile" element={<Profile isMobile />} />
+                  <Route path="/webhooks" element={<Webhooks />} />
+                  <Route path="/watch/:channel" element={<Watch />} />
+                </Routes>
+              </RequireAuthWrapper>
             </ErrorBoundary>
           </main>
           <MobileBottomNav onMoreClick={() => setMobileDrawerOpen(true)} />

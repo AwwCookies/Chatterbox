@@ -1,6 +1,7 @@
 import logger from '../utils/logger.js';
 import jwt from 'jsonwebtoken';
 import { OAuthUser, UserSession } from '../models/OAuthUser.js';
+import ConfigService from '../services/configService.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || process.env.API_KEY || 'default-jwt-secret-change-me';
 const JWT_EXPIRES_IN = '15m'; // Access tokens expire in 15 minutes
@@ -144,6 +145,72 @@ export const optionalAuth = (req, res, next) => {
 
   req.isAuthenticated = apiKey && configuredKey && apiKey === configuredKey;
   next();
+};
+
+/**
+ * Middleware to enforce OAuth-only mode
+ * When security.requireAuth is enabled, requires valid user authentication for all requests
+ * Allows through: health checks, OAuth flow endpoints, and already-authenticated requests
+ */
+export const requireAuthIfEnabled = async (req, res, next) => {
+  const requireAuth = ConfigService.getSync('security.requireAuth', false);
+  
+  if (!requireAuth) {
+    return next();
+  }
+  
+  // Always allow these paths without authentication
+  // Note: req.path doesn't include the /api prefix when middleware is mounted on /api
+  const publicPaths = [
+    '/health',
+    '/auth/twitch',
+    '/auth/twitch/callback',
+    '/auth/refresh',
+    '/auth/status',
+    '/settings/require-auth',
+    '/oauth/login',
+    '/oauth/callback',
+  ];
+  
+  // Check if this is a public path
+  const isPublicPath = publicPaths.some(path => 
+    req.path === path || req.path.startsWith(path + '?')
+  );
+  
+  if (isPublicPath) {
+    return next();
+  }
+  
+  // Check for API key auth
+  const apiKey = req.headers['x-api-key'];
+  const configuredKey = process.env.API_KEY;
+  if (apiKey && configuredKey && apiKey === configuredKey) {
+    return next();
+  }
+  
+  // Check for Bearer token auth
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET);
+      const user = await OAuthUser.getById(decoded.userId);
+      if (user) {
+        req.user = user;
+        req.tokenData = decoded;
+        return next();
+      }
+    } catch (error) {
+      // Invalid token - fall through to error response
+    }
+  }
+  
+  // No valid authentication found
+  return res.status(401).json({ 
+    error: 'Authentication required', 
+    code: 'AUTH_REQUIRED',
+    message: 'This server requires authentication. Please log in with Twitch.'
+  });
 };
 
 export { JWT_SECRET, JWT_EXPIRES_IN, REFRESH_TOKEN_EXPIRES_DAYS };
