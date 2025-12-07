@@ -156,6 +156,127 @@ class DiscordWebhookService {
   }
 
   /**
+   * Trigger bits/cheer webhooks
+   */
+  async sendBits(data) {
+    try {
+      const { username, displayName, channelName, bitsAmount, message, timestamp } = data;
+      const webhooks = await Webhook.getMatchingBitsWebhooks(channelName, bitsAmount);
+      
+      for (const webhook of webhooks) {
+        const result = await this._sendBitsEmbed(webhook, {
+          username,
+          displayName,
+          channelName,
+          bitsAmount,
+          message,
+          timestamp,
+        });
+        
+        if (result.success) {
+          await Webhook.updateUserWebhookSuccess(webhook.id);
+        } else {
+          await Webhook.updateUserWebhookFailure(webhook.id);
+        }
+      }
+    } catch (error) {
+      logger.debug('Error triggering bits webhooks:', error.message);
+    }
+  }
+
+  /**
+   * Trigger subscription webhooks (new sub, resub)
+   */
+  async sendSubscription(data) {
+    try {
+      const { username, displayName, channelName, subType, tier, isPrime, cumulativeMonths, streakMonths, message, timestamp } = data;
+      const webhooks = await Webhook.getMatchingSubscriptionWebhooks(channelName, subType, cumulativeMonths || 0);
+      
+      for (const webhook of webhooks) {
+        const result = await this._sendSubscriptionEmbed(webhook, {
+          username,
+          displayName,
+          channelName,
+          subType,
+          tier,
+          isPrime,
+          cumulativeMonths,
+          streakMonths,
+          message,
+          timestamp,
+        });
+        
+        if (result.success) {
+          await Webhook.updateUserWebhookSuccess(webhook.id);
+        } else {
+          await Webhook.updateUserWebhookFailure(webhook.id);
+        }
+      }
+    } catch (error) {
+      logger.debug('Error triggering subscription webhooks:', error.message);
+    }
+  }
+
+  /**
+   * Trigger gift sub webhooks (single gift, mystery/mass gift)
+   */
+  async sendGiftSub(data) {
+    try {
+      const { username, displayName, channelName, giftCount, recipient, tier, isMysteryGift, timestamp } = data;
+      const webhooks = await Webhook.getMatchingGiftSubWebhooks(channelName, giftCount);
+      
+      for (const webhook of webhooks) {
+        const result = await this._sendGiftSubEmbed(webhook, {
+          username,
+          displayName,
+          channelName,
+          giftCount,
+          recipient,
+          tier,
+          isMysteryGift,
+          timestamp,
+        });
+        
+        if (result.success) {
+          await Webhook.updateUserWebhookSuccess(webhook.id);
+        } else {
+          await Webhook.updateUserWebhookFailure(webhook.id);
+        }
+      }
+    } catch (error) {
+      logger.debug('Error triggering gift sub webhooks:', error.message);
+    }
+  }
+
+  /**
+   * Trigger raid webhooks
+   */
+  async sendRaid(data) {
+    try {
+      const { raiderName, raiderDisplayName, channelName, viewerCount, timestamp } = data;
+      const webhooks = await Webhook.getMatchingRaidWebhooks(channelName, viewerCount);
+      
+      for (const webhook of webhooks) {
+        const result = await this._sendRaidEmbed(webhook, {
+          raiderName,
+          raiderDisplayName,
+          channelName,
+          viewerCount,
+          timestamp,
+        });
+        
+        if (result.success) {
+          await Webhook.updateUserWebhookSuccess(webhook.id);
+        } else {
+          await Webhook.updateUserWebhookFailure(webhook.id);
+        }
+      }
+    } catch (error) {
+      logger.debug('Error triggering raid webhooks:', error.message);
+    }
+  }
+
+  /**
    * Trigger user signup webhooks (admin)
    */
   async sendUserSignup(data) {
@@ -643,6 +764,189 @@ class DiscordWebhookService {
     if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
     return `${Math.floor(seconds / 86400)}d`;
+  }
+
+  /**
+   * Format bits to display with appropriate emoji
+   */
+  formatBits(amount) {
+    if (amount >= 10000) return `💎 ${amount.toLocaleString()}`;
+    if (amount >= 5000) return `💠 ${amount.toLocaleString()}`;
+    if (amount >= 1000) return `🔷 ${amount.toLocaleString()}`;
+    if (amount >= 100) return `🔹 ${amount.toLocaleString()}`;
+    return `▫️ ${amount.toLocaleString()}`;
+  }
+
+  /**
+   * Get tier display name
+   */
+  getTierName(tier) {
+    if (tier === '3000') return 'Tier 3';
+    if (tier === '2000') return 'Tier 2';
+    return 'Tier 1';
+  }
+
+  /**
+   * Send bits notification (internal)
+   */
+  async _sendBitsEmbed(webhook, data) {
+    const color = webhook.embed_color || '#9147FF';
+    const { username, displayName, channelName, bitsAmount, message } = data;
+
+    const fields = [
+      { name: 'Channel', value: `#${channelName}`, inline: true },
+      { name: 'Bits', value: this.formatBits(bitsAmount), inline: true },
+      { name: 'Value', value: `~$${(bitsAmount * 0.01).toFixed(2)}`, inline: true },
+    ];
+
+    if (message) {
+      fields.push({ name: 'Message', value: message.slice(0, 1024), inline: false });
+    }
+
+    const embed = this.buildEmbed({
+      title: `💎 ${displayName || username} cheered!`,
+      description: `**${bitsAmount.toLocaleString()}** bits in **${channelName}**`,
+      color,
+      fields,
+      footer: { text: 'Chatterbox • Bits Alert' },
+      timestamp: webhook.include_timestamp ? new Date() : undefined,
+    });
+
+    const payload = {
+      username: webhook.custom_username || 'Chatterbox',
+      avatar_url: webhook.custom_avatar_url || undefined,
+      embeds: [embed],
+    };
+
+    return this.send(webhook.webhook_url, payload);
+  }
+
+  /**
+   * Send subscription notification (internal)
+   */
+  async _sendSubscriptionEmbed(webhook, data) {
+    const { username, displayName, channelName, subType, tier, isPrime, cumulativeMonths, streakMonths, message } = data;
+    
+    const isResub = subType === 'resub';
+    const color = webhook.embed_color || (isPrime ? '#0078D7' : '#9147FF');
+    
+    let title = isPrime ? '👑 Prime Sub' : '⭐ New Subscriber';
+    let emoji = '⭐';
+    
+    if (isResub) {
+      title = isPrime ? `👑 Prime Resub` : `🔄 Resub`;
+      emoji = '🔄';
+    }
+
+    const fields = [
+      { name: 'Channel', value: `#${channelName}`, inline: true },
+      { name: 'Tier', value: isPrime ? 'Prime' : this.getTierName(tier), inline: true },
+    ];
+
+    if (cumulativeMonths > 1) {
+      fields.push({ name: 'Months', value: `${cumulativeMonths} cumulative`, inline: true });
+    }
+
+    if (streakMonths > 1) {
+      fields.push({ name: 'Streak', value: `${streakMonths} months`, inline: true });
+    }
+
+    if (message) {
+      fields.push({ name: 'Message', value: message.slice(0, 1024), inline: false });
+    }
+
+    const embed = this.buildEmbed({
+      title: `${emoji} ${displayName || username} ${isResub ? 'resubscribed' : 'subscribed'}!`,
+      description: isResub 
+        ? `**${cumulativeMonths}** months in **${channelName}**`
+        : `New subscriber in **${channelName}**`,
+      color,
+      fields,
+      footer: { text: 'Chatterbox • Subscription Alert' },
+      timestamp: webhook.include_timestamp ? new Date() : undefined,
+    });
+
+    const payload = {
+      username: webhook.custom_username || 'Chatterbox',
+      avatar_url: webhook.custom_avatar_url || undefined,
+      embeds: [embed],
+    };
+
+    return this.send(webhook.webhook_url, payload);
+  }
+
+  /**
+   * Send gift sub notification (internal)
+   */
+  async _sendGiftSubEmbed(webhook, data) {
+    const { username, displayName, channelName, giftCount, recipient, tier, isMysteryGift } = data;
+    const color = webhook.embed_color || '#FF69B4';
+
+    const fields = [
+      { name: 'Channel', value: `#${channelName}`, inline: true },
+      { name: 'Tier', value: this.getTierName(tier), inline: true },
+      { name: 'Quantity', value: giftCount.toString(), inline: true },
+    ];
+
+    if (recipient && !isMysteryGift) {
+      fields.push({ name: 'Recipient', value: recipient, inline: true });
+    }
+
+    const isMultiple = giftCount > 1;
+    const emoji = isMultiple ? '🎁' : '🎀';
+    const title = isMysteryGift 
+      ? `${emoji} ${displayName || username} gifted ${giftCount} sub${isMultiple ? 's' : ''}!`
+      : `${emoji} ${displayName || username} gifted a sub to ${recipient}!`;
+
+    const embed = this.buildEmbed({
+      title,
+      description: isMysteryGift 
+        ? `**${giftCount}** mystery gift${isMultiple ? 's' : ''} in **${channelName}**!`
+        : `Gift subscription in **${channelName}**`,
+      color,
+      fields,
+      footer: { text: 'Chatterbox • Gift Sub Alert' },
+      timestamp: webhook.include_timestamp ? new Date() : undefined,
+    });
+
+    const payload = {
+      username: webhook.custom_username || 'Chatterbox',
+      avatar_url: webhook.custom_avatar_url || undefined,
+      embeds: [embed],
+    };
+
+    return this.send(webhook.webhook_url, payload);
+  }
+
+  /**
+   * Send raid notification (internal)
+   */
+  async _sendRaidEmbed(webhook, data) {
+    const { raiderName, raiderDisplayName, channelName, viewerCount } = data;
+    const color = webhook.embed_color || '#FF4500';
+
+    const fields = [
+      { name: 'Target Channel', value: `#${channelName}`, inline: true },
+      { name: 'Viewers', value: viewerCount.toLocaleString(), inline: true },
+    ];
+
+    const embed = this.buildEmbed({
+      title: `🚀 Raid from ${raiderDisplayName || raiderName}!`,
+      description: `**${viewerCount.toLocaleString()}** viewers raided **${channelName}**`,
+      url: `https://twitch.tv/${raiderName}`,
+      color,
+      fields,
+      footer: { text: 'Chatterbox • Raid Alert' },
+      timestamp: webhook.include_timestamp ? new Date() : undefined,
+    });
+
+    const payload = {
+      username: webhook.custom_username || 'Chatterbox',
+      avatar_url: webhook.custom_avatar_url || undefined,
+      embeds: [embed],
+    };
+
+    return this.send(webhook.webhook_url, payload);
   }
 
   sleep(ms) {

@@ -1666,6 +1666,314 @@ Get all messages containing links/URLs posted in a channel.
 
 ---
 
+### Channel Monetization
+
+Track bits, subscriptions, gift subs, hype trains, and raids for channels.
+
+#### Get Monetization Summary
+`GET /api/channels/:name/monetization`
+
+Get comprehensive monetization statistics for a channel.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Channel name |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `days` | integer | 30 | Number of days to include (1-365) |
+
+**Response:**
+```json
+{
+  "channel": { "id": 1, "name": "streamer" },
+  "period": "30 days",
+  "summary": {
+    "bits": {
+      "total": 50000,
+      "events": 150,
+      "uniqueGivers": 45,
+      "estimatedValue": "500.00"
+    },
+    "subscriptions": {
+      "newSubs": 50,
+      "resubs": 120,
+      "giftSubEvents": 30,
+      "giftsGiven": 85,
+      "uniqueGifters": 15,
+      "primeSubs": 25,
+      "byTier": { "tier1": 150, "tier2": 15, "tier3": 5 }
+    },
+    "hypeTrains": { "total": 5, "maxLevel": 4 },
+    "raids": { "total": 12, "totalViewers": 5500 }
+  },
+  "daily": [
+    { "date": "2024-01-15", "bits": 1500, "bitEvents": 5, "subs": 3, "gifts": 2 }
+  ]
+}
+```
+
+---
+
+#### Get Top Gift Sub Givers
+`GET /api/channels/:name/monetization/top-gifters`
+
+Get leaderboard of top gift sub givers.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Channel name |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | 25 | Number of results (max 100) |
+| `days` | integer | 30 | Time period in days (1-365) |
+
+**Response:**
+```json
+{
+  "channel": { "id": 1, "name": "streamer" },
+  "period": "30 days",
+  "topGifters": [
+    {
+      "rank": 1,
+      "userId": 42,
+      "username": "biggifter",
+      "displayName": "BigGifter",
+      "totalGifts": 100,
+      "giftEvents": 5,
+      "lastGiftAt": "2024-01-15T20:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+#### Get Top Bit Givers
+`GET /api/channels/:name/monetization/top-bits`
+
+Get leaderboard of top bit cheerers.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Channel name |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | 25 | Number of results (max 100) |
+| `days` | integer | 30 | Time period in days (1-365) |
+
+**Response:**
+```json
+{
+  "channel": { "id": 1, "name": "streamer" },
+  "period": "30 days",
+  "topBitGivers": [
+    {
+      "rank": 1,
+      "userId": 43,
+      "username": "cheerking",
+      "displayName": "CheerKing",
+      "totalBits": 10000,
+      "cheerCount": 25,
+      "largestCheer": 5000,
+      "lastCheerAt": "2024-01-15T21:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+#### Get Recent Subscriptions
+`GET /api/channels/:name/monetization/recent-subs`
+
+Get recent subscription events.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Channel name |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | 50 | Number of results (max 100) |
+| `offset` | integer | 0 | Pagination offset |
+| `type` | string | - | Filter by type: `sub`, `resub`, `gift`, `prime` |
+
+**Response:**
+```json
+{
+  "channel": { "id": 1, "name": "streamer" },
+  "subscriptions": [
+    {
+      "id": 1,
+      "subType": "subgift",
+      "tier": "1000",
+      "isPrime": false,
+      "cumulativeMonths": 1,
+      "streakMonths": null,
+      "giftCount": 5,
+      "message": null,
+      "timestamp": "2024-01-15T20:00:00.000Z",
+      "user": { "id": 42, "username": "gifter", "displayName": "Gifter" },
+      "recipient": { "id": 43, "username": "lucky", "displayName": "Lucky" }
+    }
+  ],
+  "total": 500,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+---
+
+#### Get Recent Bits
+`GET /api/channels/:name/monetization/recent-bits`
+
+Get recent bit cheer events.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Channel name |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | 50 | Number of results (max 100) |
+| `offset` | integer | 0 | Pagination offset |
+
+**Response:**
+```json
+{
+  "channel": { "id": 1, "name": "streamer" },
+  "bits": [
+    {
+      "id": 1,
+      "amount": 1000,
+      "message": "Cheer1000 Great stream!",
+      "timestamp": "2024-01-15T20:30:00.000Z",
+      "user": { "id": 42, "username": "cheerer", "displayName": "Cheerer" }
+    }
+  ],
+  "total": 150,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+---
+
+#### Get Hype Train History
+`GET /api/channels/:name/monetization/hype-trains`
+
+Get hype train event history.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Channel name |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | 50 | Number of results (max 100) |
+| `offset` | integer | 0 | Pagination offset |
+
+**Response:**
+```json
+{
+  "channel": { "id": 1, "name": "streamer" },
+  "hypeTrains": [
+    {
+      "id": 1,
+      "hypeTrainId": "ht-abc123",
+      "level": 4,
+      "totalPoints": 15000,
+      "goal": 20000,
+      "topContributions": [
+        { "user_id": 42, "type": "bits", "total": 5000 }
+      ],
+      "startedAt": "2024-01-15T20:00:00.000Z",
+      "endedAt": "2024-01-15T20:10:00.000Z",
+      "isGoldenKappa": false
+    }
+  ],
+  "total": 5,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+---
+
+#### Get Raid History
+`GET /api/channels/:name/monetization/raids`
+
+Get incoming raid history.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Channel name |
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | integer | 50 | Number of results (max 100) |
+| `offset` | integer | 0 | Pagination offset |
+
+**Response:**
+```json
+{
+  "channel": { "id": 1, "name": "streamer" },
+  "stats": {
+    "totalRaids": 12,
+    "totalViewers": 5500,
+    "largestRaid": 1200,
+    "avgViewers": 458
+  },
+  "raids": [
+    {
+      "id": 1,
+      "raiderName": "bigstreamer",
+      "raiderDisplayName": "BigStreamer",
+      "viewerCount": 1200,
+      "timestamp": "2024-01-15T22:00:00.000Z",
+      "raiderChannel": { "id": 2, "name": "bigstreamer" }
+    }
+  ],
+  "total": 12,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+---
+
 ### Utilities
 
 #### Link Preview
@@ -1786,6 +2094,71 @@ Get system-wide statistics.
 ### Admin
 
 All admin endpoints require authentication via `X-API-Key` header.
+
+#### Get Dashboard Data
+`GET /api/admin/dashboard`
+
+Get comprehensive dashboard data in a single call. Includes overview stats, charts, leaderboards, and moderation summary.
+
+**Response:**
+```json
+{
+  "overview": {
+    "totalMessages": 1234567,
+    "totalUsers": 45678,
+    "activeChannels": 25,
+    "messagesLast24h": 12345,
+    "messageGrowth": 15.5,
+    "newUsersToday": 42,
+    "userGrowth": 8.2
+  },
+  "charts": {
+    "messagesHourly": [
+      { "hour": "2025-12-07T10:00:00.000Z", "count": 523 },
+      { "hour": "2025-12-07T11:00:00.000Z", "count": 612 }
+    ],
+    "messagesDaily": [
+      { "date": "2025-12-01", "count": 15234 },
+      { "date": "2025-12-02", "count": 18456 }
+    ],
+    "peakHours": [
+      { "hour": 0, "count": 450 },
+      { "hour": 1, "count": 320 }
+    ]
+  },
+  "leaderboards": {
+    "topChatters": [
+      { "username": "user1", "displayName": "User One", "messageCount": 1234 }
+    ],
+    "channelActivity": [
+      { "name": "channel1", "displayName": "Channel One", "messageCount": 5678, "uniqueUsers": 234 }
+    ],
+    "topEmotes": [
+      { "name": "LUL", "count": 5432 }
+    ]
+  },
+  "moderation": {
+    "breakdown": [
+      { "actionType": "ban", "count": 15 },
+      { "actionType": "timeout", "count": 45 }
+    ],
+    "recent": [
+      {
+        "id": 123,
+        "actionType": "timeout",
+        "reason": "Spam",
+        "duration": 600,
+        "timestamp": "2025-12-07T12:30:00.000Z",
+        "targetUsername": "spammer123",
+        "moderatorUsername": "mod1",
+        "channelName": "channel1"
+      }
+    ]
+  }
+}
+```
+
+---
 
 #### Get System Information
 `GET /api/admin/system`
@@ -2242,6 +2615,51 @@ Get traffic analytics data for monitoring server activity.
 
 ---
 
+#### Get Real-time IP Traffic Stats
+`GET /api/admin/traffic/realtime`
+
+Get real-time IP traffic statistics from the in-memory rate limiter. Shows all IPs that have made requests within the current rate limit window.
+
+**Response:**
+```json
+{
+  "activeIps": [
+    {
+      "ip": "192.168.1.100",
+      "requestCount": 45,
+      "requestsPerSecond": 2.5,
+      "requestsPerMinute": 150,
+      "maxRequests": 100,
+      "percentOfLimit": 45.0,
+      "isBlocked": false,
+      "hasCustomLimit": false,
+      "windowStart": 1733590800000,
+      "windowMs": 60000
+    }
+  ],
+  "totalActiveIps": 1,
+  "totalRequests": 45,
+  "blockedIps": 0,
+  "customLimits": 0,
+  "defaultRateLimit": 1000,
+  "windowMs": 60000
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `activeIps` | array | List of IPs with current activity |
+| `ip` | string | The IP address |
+| `requestCount` | number | Number of requests in current window |
+| `requestsPerSecond` | number | Calculated request rate per second |
+| `requestsPerMinute` | number | Calculated request rate per minute |
+| `maxRequests` | number | Maximum allowed requests per window |
+| `percentOfLimit` | number | Percentage of rate limit used |
+| `isBlocked` | boolean | Whether IP is currently blocked |
+| `hasCustomLimit` | boolean | Whether IP has a custom rate limit |
+
+---
+
 #### Cleanup Traffic Logs
 `DELETE /api/admin/traffic/cleanup`
 
@@ -2382,6 +2800,36 @@ Set a custom rate limit for a specific IP address.
 **Notes:**
 - Set `limit` to `null` to remove the override (whitelist)
 - Without an `expiresAt`, the rule is permanent
+
+---
+
+#### Whitelist IP Address
+`POST /api/admin/ip-rules/whitelist`
+
+Add an IP address to the whitelist, bypassing all rate limits.
+
+**Request Body:**
+```json
+{
+  "ip": "192.168.1.100",
+  "reason": "Trusted internal service",
+  "expiresAt": "2025-12-10T00:00:00.000Z"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "IP 192.168.1.100 has been whitelisted",
+  "ip": "192.168.1.100",
+  "reason": "Trusted internal service"
+}
+```
+
+**Notes:**
+- Whitelisted IPs bypass all IP-based rate limiting
+- Existing block or rate-limit rules for the IP are removed when whitelisting
+- Without an `expiresAt`, the whitelist is permanent
 
 ---
 
@@ -3184,6 +3632,10 @@ Create a new webhook for the authenticated user. Maximum 10 webhooks per user.
 | `channel_live` | Channel goes live | `channels`: array of channel names |
 | `channel_offline` | Channel goes offline | `channels`: array of channel names |
 | `channel_game_change` | Game/category changes | `channels`: array of channel names |
+| `channel_bits` | Bits/cheers | `channels`: array or null for all, `min_bits`: minimum bits to trigger (default 0) |
+| `channel_subscription` | New subs and resubs | `channels`: array or null for all, `sub_types`: ["sub", "resub", "prime"], `min_months`: minimum cumulative months (default 0) |
+| `channel_gift_sub` | Gift subs (single or mass) | `channels`: array or null for all, `min_gift_count`: minimum gifts to trigger (default 1) |
+| `channel_raid` | Incoming raids | `channels`: array or null for all, `min_viewers`: minimum viewers to trigger (default 0) |
 
 **Response:**
 ```json
@@ -3829,7 +4281,7 @@ Creates a webhook in the specified Discord channel and saves it to Chatterbox.
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | string | **Required.** Webhook name in Chatterbox |
-| `webhookType` | string | **Required.** One of: `tracked_user_message`, `mod_action`, `channel_live`, `channel_offline`, `channel_game_change` |
+| `webhookType` | string | **Required.** One of: `tracked_user_message`, `mod_action`, `channel_live`, `channel_offline`, `channel_game_change`, `channel_bits`, `channel_subscription`, `channel_gift_sub`, `channel_raid` |
 | `config` | object | Configuration based on webhook type |
 | `embedColor` | string | Hex color for Discord embeds (default: `#5865F2`) |
 | `customUsername` | string | Custom bot username for webhook |

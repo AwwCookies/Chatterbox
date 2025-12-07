@@ -37,27 +37,13 @@ api.interceptors.request.use((config) => {
     }
   }
   
-  // Add Bearer token for OAuth endpoints (user auth)
-  // Import auth store dynamically to avoid circular deps
-  const needsBearerAuth = (
-    (config.url?.startsWith('/oauth/') && !config.url?.includes('/login') && !config.url?.includes('/callback') && !config.url?.includes('/refresh')) ||
-    config.url?.startsWith('/chat/') ||
-    config.url?.startsWith('/webhooks') ||
-    config.url?.startsWith('/discord') ||
-    config.url?.startsWith('/admin/oauth-users') ||
-    config.url?.startsWith('/admin/tiers') ||
-    config.url?.startsWith('/admin/users/') ||
-    config.url?.startsWith('/admin/usage') ||
-    config.url?.startsWith('/admin/logs') ||
-    config.url?.startsWith('/me/')
-  );
-  
-  if (needsBearerAuth) {
-    const authState = JSON.parse(localStorage.getItem('chatterbox-auth') || '{}');
-    const accessToken = authState?.state?.accessToken;
-    if (accessToken) {
-      config.headers['Authorization'] = `Bearer ${accessToken}`;
-    }
+  // Always add Bearer token if user is logged in
+  // This allows authenticated users to use their tier-based rate limits
+  // instead of IP-based rate limits
+  const authState = JSON.parse(localStorage.getItem('chatterbox-auth') || '{}');
+  const accessToken = authState?.state?.accessToken;
+  if (accessToken) {
+    config.headers['Authorization'] = `Bearer ${accessToken}`;
   }
   
   return config;
@@ -68,6 +54,17 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     console.error('API Error:', error.response?.data || error.message);
+    
+    // Handle rate limiting (429)
+    if (error.response?.status === 429) {
+      // Get retryAfter from response body first, then header, then default to 60
+      const retryAfter = error.response?.data?.retryAfter 
+        || parseInt(error.response.headers['retry-after'] || '60', 10);
+      // Dynamically import to avoid circular dependency
+      import('../stores/toastStore').then(({ useToastStore }) => {
+        useToastStore.getState().setRateLimit(retryAfter);
+      });
+    }
     
     // Handle token expiration
     if (error.response?.status === 401 && error.response?.data?.code === 'TOKEN_EXPIRED') {
@@ -153,6 +150,7 @@ export const channelsApi = {
 // Stats API
 export const statsApi = {
   getOverview: () => api.get('/stats'),
+  getDashboard: () => api.get('/dashboard'),  // Public dashboard endpoint
   getHealth: () => api.get('/health'),
 };
 
@@ -253,6 +251,10 @@ export const meApi = {
 
 // Admin API
 export const adminApi = {
+  // Dashboard
+  getDashboard: () => api.get('/admin/dashboard', { requiresAuth: true }),
+  getAnalytics: (period = '24h') => api.get('/admin/analytics', { params: { period }, requiresAuth: true }),
+  
   // System
   getSystem: () => api.get('/admin/system', { requiresAuth: true }),
   getDatabase: () => api.get('/admin/database', { requiresAuth: true }),
@@ -280,6 +282,7 @@ export const adminApi = {
   
   // Traffic analytics
   getTrafficStats: (timeRange = 'day') => api.get('/admin/traffic', { params: { timeRange }, requiresAuth: true }),
+  getRealtimeTraffic: () => api.get('/admin/traffic/realtime', { requiresAuth: true }),
   cleanupTrafficLogs: (olderThanDays) => api.delete('/admin/traffic/cleanup', { data: { olderThanDays } }),
   
   // IP management
@@ -288,6 +291,7 @@ export const adminApi = {
   blockIp: (ip, reason, expiresAt) => api.post('/admin/ip-rules/block', { ip, reason, expiresAt }),
   unblockIp: (ip) => api.post('/admin/ip-rules/unblock', { ip }),
   setIpRateLimit: (ip, limit, expiresAt) => api.post('/admin/ip-rules/rate-limit', { ip, limit, expiresAt }),
+  whitelistIp: (ip, reason, expiresAt) => api.post('/admin/ip-rules/whitelist', { ip, reason, expiresAt }),
   deleteIpRule: (id) => api.delete(`/admin/ip-rules/${id}`),
   
   // Server logs

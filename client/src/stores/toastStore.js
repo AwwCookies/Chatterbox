@@ -3,15 +3,55 @@ import { create } from 'zustand';
 export const useToastStore = create((set, get) => ({
   toasts: [],
   
-  addToast: (toast) => {
+  // Rate limit state
+  rateLimit: null, // { retryAfter: seconds, resetTime: Date }
+  
+  setRateLimit: (retryAfter) => {
+    if (retryAfter) {
+      set({
+        rateLimit: {
+          retryAfter,
+          resetTime: new Date(Date.now() + retryAfter * 1000),
+        },
+      });
+    } else {
+      set({ rateLimit: null });
+    }
+  },
+  
+  clearRateLimit: () => {
+    set({ rateLimit: null });
+  },
+  
+  addToast: (toastOrMessage, typeOrOptions) => {
     const id = Date.now() + Math.random();
-    const newToast = {
-      id,
-      type: 'info', // 'success' | 'error' | 'warning' | 'info'
-      duration: 5000,
-      dismissible: true,
-      ...toast,
-    };
+    
+    // Support both: addToast('message', 'type') and addToast({ message, type, ... })
+    let newToast;
+    if (typeof toastOrMessage === 'string') {
+      // Called as addToast('message', 'type') or addToast('message', { type, ... })
+      const message = toastOrMessage;
+      const options = typeof typeOrOptions === 'string' 
+        ? { type: typeOrOptions }
+        : (typeOrOptions || {});
+      newToast = {
+        id,
+        type: 'info',
+        duration: 5000,
+        dismissible: true,
+        message,
+        ...options,
+      };
+    } else {
+      // Called as addToast({ message, type, ... })
+      newToast = {
+        id,
+        type: 'info',
+        duration: 5000,
+        dismissible: true,
+        ...toastOrMessage,
+      };
+    }
     
     set((state) => ({
       toasts: [...state.toasts, newToast],

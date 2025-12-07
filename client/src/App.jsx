@@ -21,6 +21,7 @@ import Webhooks from './pages/Webhooks'
 import ProfileCardContainer from './components/user/ProfileCardContainer'
 import ThreadCardContainer from './components/chat/ThreadCardContainer'
 import ToastContainer from './components/common/ToastContainer'
+import RateLimitBanner from './components/common/RateLimitBanner'
 import CommandPalette from './components/common/CommandPalette'
 import ErrorBoundary from './components/common/ErrorBoundary'
 import SettingsModal from './components/common/SettingsModal'
@@ -176,6 +177,7 @@ function App() {
       )}
       
       {/* Global components */}
+      <RateLimitBanner />
       <ProfileCardContainer />
       <ThreadCardContainer />
       <ToastContainer />

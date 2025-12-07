@@ -187,6 +187,17 @@ class WebSocketService {
   }
 
   /**
+   * Broadcast to a specific channel's subscribers
+   */
+  broadcastToChannel(channelName, event, data) {
+    this.io?.to(`channel:${channelName}`).emit(event, {
+      type: event,
+      data,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  /**
    * Broadcast to global subscribers only (dashboard clients)
    */
   broadcastGlobal(event, data) {

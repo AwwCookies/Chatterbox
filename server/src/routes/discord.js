@@ -297,7 +297,7 @@ router.post('/guilds/:guildId/channels/:channelId/webhook', requireUserAuth, asy
       return res.status(400).json({ error: 'Name and webhook type are required' });
     }
 
-    const validTypes = ['tracked_user_message', 'mod_action', 'channel_live', 'channel_offline', 'channel_game_change'];
+    const validTypes = ['tracked_user_message', 'mod_action', 'channel_live', 'channel_offline', 'channel_game_change', 'channel_bits', 'channel_subscription', 'channel_gift_sub', 'channel_raid'];
     if (!validTypes.includes(webhookType)) {
       return res.status(400).json({ error: 'Invalid webhook type' });
     }

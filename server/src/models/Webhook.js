@@ -454,13 +454,121 @@ class Webhook {
       `SELECT * FROM user_webhooks 
        WHERE webhook_type = $1 
        AND enabled = TRUE 
+       AND muted = FALSE
        AND consecutive_failures < 5
        AND (
          config->'channels' IS NULL 
+         OR config->'channels' = '[]'::jsonb
          OR config->'channels' ? $2
          OR config->>'channels' LIKE $3
        )`,
       [webhookType, channelName.toLowerCase(), `%"${channelName.toLowerCase()}"%`]
+    );
+    return result.rows;
+  }
+
+  /**
+   * Get bits webhooks that match criteria (channel + minimum bits)
+   */
+  static async getMatchingBitsWebhooks(channelName, bitsAmount) {
+    const result = await query(
+      `SELECT * FROM user_webhooks 
+       WHERE webhook_type = 'channel_bits' 
+       AND enabled = TRUE 
+       AND muted = FALSE
+       AND consecutive_failures < 5
+       AND (
+         config->'channels' IS NULL 
+         OR config->'channels' = '[]'::jsonb
+         OR config->'channels' ? $1
+         OR config->>'channels' LIKE $2
+       )
+       AND (
+         config->>'min_bits' IS NULL 
+         OR (config->>'min_bits')::int <= $3
+       )`,
+      [channelName.toLowerCase(), `%"${channelName.toLowerCase()}"%`, bitsAmount]
+    );
+    return result.rows;
+  }
+
+  /**
+   * Get subscription webhooks that match criteria
+   */
+  static async getMatchingSubscriptionWebhooks(channelName, subType, cumulativeMonths = 0) {
+    const result = await query(
+      `SELECT * FROM user_webhooks 
+       WHERE webhook_type = 'channel_subscription' 
+       AND enabled = TRUE 
+       AND muted = FALSE
+       AND consecutive_failures < 5
+       AND (
+         config->'channels' IS NULL 
+         OR config->'channels' = '[]'::jsonb
+         OR config->'channels' ? $1
+         OR config->>'channels' LIKE $2
+       )
+       AND (
+         config->'sub_types' IS NULL 
+         OR config->'sub_types' = '[]'::jsonb
+         OR config->'sub_types' ? $3
+         OR config->>'sub_types' LIKE $4
+       )
+       AND (
+         config->>'min_months' IS NULL 
+         OR (config->>'min_months')::int <= $5
+       )`,
+      [channelName.toLowerCase(), `%"${channelName.toLowerCase()}"%`, subType, `%"${subType}"%`, cumulativeMonths]
+    );
+    return result.rows;
+  }
+
+  /**
+   * Get gift sub webhooks that match criteria (channel + minimum gift count)
+   */
+  static async getMatchingGiftSubWebhooks(channelName, giftCount) {
+    const result = await query(
+      `SELECT * FROM user_webhooks 
+       WHERE webhook_type = 'channel_gift_sub' 
+       AND enabled = TRUE 
+       AND muted = FALSE
+       AND consecutive_failures < 5
+       AND (
+         config->'channels' IS NULL 
+         OR config->'channels' = '[]'::jsonb
+         OR config->'channels' ? $1
+         OR config->>'channels' LIKE $2
+       )
+       AND (
+         config->>'min_gift_count' IS NULL 
+         OR (config->>'min_gift_count')::int <= $3
+       )`,
+      [channelName.toLowerCase(), `%"${channelName.toLowerCase()}"%`, giftCount]
+    );
+    return result.rows;
+  }
+
+  /**
+   * Get raid webhooks that match criteria (channel + minimum viewers)
+   */
+  static async getMatchingRaidWebhooks(channelName, viewerCount) {
+    const result = await query(
+      `SELECT * FROM user_webhooks 
+       WHERE webhook_type = 'channel_raid' 
+       AND enabled = TRUE 
+       AND muted = FALSE
+       AND consecutive_failures < 5
+       AND (
+         config->'channels' IS NULL 
+         OR config->'channels' = '[]'::jsonb
+         OR config->'channels' ? $1
+         OR config->>'channels' LIKE $2
+       )
+       AND (
+         config->>'min_viewers' IS NULL 
+         OR (config->>'min_viewers')::int <= $3
+       )`,
+      [channelName.toLowerCase(), `%"${channelName.toLowerCase()}"%`, viewerCount]
     );
     return result.rows;
   }

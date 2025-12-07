@@ -1,10 +1,15 @@
 import ConfigService from '../services/configService.js';
 import { query } from '../config/database.js';
 import logger from '../utils/logger.js';
+import jwt from 'jsonwebtoken';
+
+// Get JWT secret lazily to ensure env vars are loaded
+const getJwtSecret = () => process.env.JWT_SECRET || process.env.API_KEY || 'default-jwt-secret-change-me';
 
 // In-memory request counts per IP
 const ipRequestCounts = new Map();
 const ipBlocklist = new Set();
+const ipWhitelist = new Set();
 const ipRateLimitOverrides = new Map();
 
 // Cleanup interval
@@ -40,7 +45,19 @@ export async function initializeTrafficTracking() {
       ipRateLimitOverrides.set(row.ip_address, row.rate_limit_override);
     }
     
-    logger.info(`Traffic tracking initialized: ${ipBlocklist.size} blocked IPs, ${ipRateLimitOverrides.size} rate limit overrides`);
+    // Load whitelisted IPs
+    const whitelisted = await query(`
+      SELECT ip_address 
+      FROM ip_rules 
+      WHERE rule_type = 'whitelist' 
+      AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+    `);
+    
+    for (const row of whitelisted.rows) {
+      ipWhitelist.add(row.ip_address);
+    }
+    
+    logger.info(`Traffic tracking initialized: ${ipBlocklist.size} blocked IPs, ${ipRateLimitOverrides.size} rate limit overrides, ${ipWhitelist.size} whitelisted IPs`);
   } catch (error) {
     logger.error('Failed to initialize traffic tracking:', error.message);
   }
@@ -144,14 +161,45 @@ export function ipBlocker(req, res, next) {
 
 /**
  * Per-IP rate limiter middleware
+ * Only applies to unauthenticated requests - authenticated users use tier-based limits
  */
 export function perIpRateLimiter(req, res, next) {
   const enabled = ConfigService.getSync('rateLimit.perIp.enabled', true);
   if (!enabled) {
     return next();
   }
+
+  // Check if user is authenticated via Bearer token
+  // If so, skip IP rate limiting - they'll use tier-based limits instead
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    try {
+      // Verify token is valid (don't need full user lookup, just validity)
+      const secret = getJwtSecret();
+      jwt.verify(token, secret);
+      // Valid token - skip IP rate limit, tier-based limits apply
+      return next();
+    } catch (error) {
+      // Invalid/expired token - fall through to IP rate limiting
+    }
+  }
+
+  // Also skip for admin API key
+  const apiKey = req.headers['x-api-key'];
+  if (apiKey && apiKey === process.env.API_KEY) {
+    logger.debug(`Skipping IP rate limit for API key auth`);
+    return next();
+  }
   
   const ip = req.clientIp || getClientIp(req);
+  
+  // Check if IP is whitelisted - skip rate limiting entirely
+  if (ipWhitelist.has(ip)) {
+    logger.debug(`Skipping IP rate limit for whitelisted IP: ${ip}`);
+    return next();
+  }
+  
   const windowMs = ConfigService.getSync('rateLimit.perIp.windowMs', 60000);
   let maxRequests = ConfigService.getSync('rateLimit.perIp.maxRequests', 1000);
   
@@ -235,6 +283,34 @@ export async function setIpRateLimit(ip, limit, expiresAt = null) {
   }
   
   logger.info(`IP rate limit set: ${ip} = ${limit}`);
+}
+
+/**
+ * Whitelist an IP address (bypasses rate limits)
+ */
+export async function whitelistIp(ip, reason = null, expiresAt = null) {
+  // Remove any existing rules for this IP first
+  await query('DELETE FROM ip_rules WHERE ip_address = $1', [ip]);
+  ipBlocklist.delete(ip);
+  ipRateLimitOverrides.delete(ip);
+  
+  // Add whitelist rule
+  await query(`
+    INSERT INTO ip_rules (ip_address, rule_type, reason, expires_at)
+    VALUES ($1, 'whitelist', $2, $3)
+  `, [ip, reason, expiresAt]);
+  
+  ipWhitelist.add(ip);
+  logger.info(`IP whitelisted: ${ip}${reason ? ` (${reason})` : ''}`);
+}
+
+/**
+ * Remove IP from whitelist
+ */
+export async function unwhitelistIp(ip) {
+  await query('DELETE FROM ip_rules WHERE ip_address = $1 AND rule_type = $2', [ip, 'whitelist']);
+  ipWhitelist.delete(ip);
+  logger.info(`IP removed from whitelist: ${ip}`);
 }
 
 /**
@@ -401,6 +477,53 @@ export function getIpStatus(ip) {
 }
 
 /**
+ * Get real-time traffic stats for all active IPs
+ * Returns current request counts from memory
+ */
+export function getRealtimeIpStats() {
+  const windowMs = ConfigService.getSync('rateLimit.perIp.windowMs', 60000);
+  const defaultMaxRequests = ConfigService.getSync('rateLimit.perIp.maxRequests', 1000);
+  const now = Date.now();
+  
+  const activeIps = [];
+  
+  for (const [ip, data] of ipRequestCounts.entries()) {
+    // Only include IPs with activity in the current window
+    if (now - data.windowStart <= windowMs) {
+      const maxRequests = ipRateLimitOverrides.get(ip) || defaultMaxRequests;
+      const requestsPerSecond = data.count / ((now - data.windowStart) / 1000);
+      const percentOfLimit = (data.count / maxRequests) * 100;
+      
+      activeIps.push({
+        ip,
+        requestCount: data.count,
+        requestsPerSecond: parseFloat(requestsPerSecond.toFixed(2)),
+        requestsPerMinute: parseFloat((requestsPerSecond * 60).toFixed(2)),
+        maxRequests,
+        percentOfLimit: parseFloat(percentOfLimit.toFixed(1)),
+        isBlocked: ipBlocklist.has(ip),
+        hasCustomLimit: ipRateLimitOverrides.has(ip),
+        windowStart: data.windowStart,
+        windowMs
+      });
+    }
+  }
+  
+  // Sort by request count descending
+  activeIps.sort((a, b) => b.requestCount - a.requestCount);
+  
+  return {
+    activeIps,
+    totalActiveIps: activeIps.length,
+    totalRequests: activeIps.reduce((sum, ip) => sum + ip.requestCount, 0),
+    blockedIps: ipBlocklist.size,
+    customLimits: ipRateLimitOverrides.size,
+    defaultRateLimit: defaultMaxRequests,
+    windowMs
+  };
+}
+
+/**
  * Cleanup old traffic logs
  */
 export async function cleanupTrafficLogs() {
@@ -423,9 +546,12 @@ export default {
   blockIp,
   unblockIp,
   setIpRateLimit,
+  whitelistIp,
+  unwhitelistIp,
   getTrafficStats,
   getIpRules,
   deleteIpRule,
   getIpStatus,
+  getRealtimeIpStats,
   cleanupTrafficLogs
 };

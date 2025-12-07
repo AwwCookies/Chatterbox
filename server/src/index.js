@@ -38,6 +38,7 @@ import {
   initializeTrafficTracking 
 } from './middleware/trafficMiddleware.js';
 import { createTrackingMiddleware } from './middleware/usageTracking.js';
+import { globalAuthRateLimit } from './middleware/tierLimits.js';
 
 // Routes
 import messagesRouter from './routes/messages.js';
@@ -88,10 +89,11 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Traffic middleware (IP blocking, analytics, per-IP rate limiting)
+// Traffic middleware (IP blocking, analytics, per-IP rate limiting for unauthenticated users)
 app.use('/api', ipBlocker);
 app.use('/api', trafficAnalytics);
-app.use('/api', perIpRateLimiter);
+app.use('/api', perIpRateLimiter);  // Only applies to unauthenticated requests
+app.use('/api', globalAuthRateLimit);  // Tier-based rate limit for authenticated users
 
 // Usage tracking middleware (async, non-blocking)
 app.use('/api', createTrackingMiddleware({
@@ -327,6 +329,149 @@ app.get('/api/stats', async (req, res) => {
   } catch (error) {
     logger.error('Error fetching stats:', error.message);
     res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
+// Public dashboard endpoint - no auth required
+app.get('/api/dashboard', async (req, res) => {
+  try {
+    const { query } = await import('./config/database.js');
+    
+    const [
+      messageCount,
+      userCount,
+      channelCount,
+      messagesLast24h,
+      topChatters,
+      channelActivity,
+      modActionBreakdown,
+      peakHours,
+      messageGrowth
+    ] = await Promise.all([
+      query('SELECT COUNT(*) FROM messages'),
+      query('SELECT COUNT(*) FROM users'),
+      query('SELECT COUNT(*) FROM channels WHERE is_active = TRUE'),
+      
+      // Messages last 24h by hour
+      query(`
+        SELECT 
+          date_trunc('hour', timestamp) as hour,
+          COUNT(*) as count
+        FROM messages
+        WHERE timestamp > NOW() - INTERVAL '24 hours'
+        GROUP BY hour
+        ORDER BY hour
+      `),
+      
+      // Top chatters (24h)
+      query(`
+        SELECT 
+          u.username,
+          u.display_name,
+          COUNT(m.id) as message_count
+        FROM messages m
+        JOIN users u ON m.user_id = u.id
+        WHERE m.timestamp > NOW() - INTERVAL '24 hours'
+        GROUP BY u.id, u.username, u.display_name
+        ORDER BY message_count DESC
+        LIMIT 10
+      `),
+      
+      // Channel activity (24h)
+      query(`
+        SELECT 
+          c.name,
+          c.display_name,
+          COUNT(m.id) as message_count,
+          COUNT(DISTINCT m.user_id) as unique_users
+        FROM messages m
+        JOIN channels c ON m.channel_id = c.id
+        WHERE m.timestamp > NOW() - INTERVAL '24 hours'
+        GROUP BY c.id, c.name, c.display_name
+        ORDER BY message_count DESC
+        LIMIT 10
+      `),
+      
+      // Mod action breakdown (24h)
+      query(`
+        SELECT 
+          action_type,
+          COUNT(*) as count
+        FROM mod_actions
+        WHERE timestamp > NOW() - INTERVAL '24 hours'
+        GROUP BY action_type
+        ORDER BY count DESC
+      `),
+      
+      // Peak hours (30-day average)
+      query(`
+        SELECT 
+          EXTRACT(hour FROM timestamp)::int as hour,
+          ROUND(COUNT(*) / 30.0) as avg_count
+        FROM messages
+        WHERE timestamp > NOW() - INTERVAL '30 days'
+        GROUP BY hour
+        ORDER BY hour
+      `),
+      
+      // Message growth (today vs yesterday)
+      query(`
+        SELECT
+          (SELECT COUNT(*) FROM messages WHERE timestamp > NOW() - INTERVAL '24 hours') as today,
+          (SELECT COUNT(*) FROM messages WHERE timestamp BETWEEN NOW() - INTERVAL '48 hours' AND NOW() - INTERVAL '24 hours') as yesterday
+      `)
+    ]);
+
+    // Calculate growth percentage
+    const msgToday = parseInt(messageGrowth.rows[0]?.today || 0);
+    const msgYesterday = parseInt(messageGrowth.rows[0]?.yesterday || 1);
+    const messageGrowthPct = msgYesterday > 0 
+      ? ((msgToday - msgYesterday) / msgYesterday * 100).toFixed(1)
+      : 0;
+
+    res.json({
+      overview: {
+        totalMessages: parseInt(messageCount.rows[0].count),
+        totalUsers: parseInt(userCount.rows[0].count),
+        activeChannels: parseInt(channelCount.rows[0].count),
+        messagesLast24h: messagesLast24h.rows.reduce((sum, r) => sum + parseInt(r.count), 0),
+        messageGrowth: parseFloat(messageGrowthPct),
+        connectedClients: websocketService.getConnectedClients(),
+        archiveBuffer: archiveService.getStats()
+      },
+      charts: {
+        messagesHourly: messagesLast24h.rows.map(r => ({
+          hour: r.hour,
+          count: parseInt(r.count)
+        })),
+        peakHours: peakHours.rows.map(r => ({
+          hour: parseInt(r.hour),
+          count: parseInt(r.avg_count)
+        }))
+      },
+      leaderboards: {
+        topChatters: topChatters.rows.map(r => ({
+          username: r.username,
+          displayName: r.display_name,
+          messageCount: parseInt(r.message_count)
+        })),
+        channelActivity: channelActivity.rows.map(r => ({
+          name: r.name,
+          displayName: r.display_name,
+          messageCount: parseInt(r.message_count),
+          uniqueUsers: parseInt(r.unique_users)
+        }))
+      },
+      moderation: {
+        breakdown: modActionBreakdown.rows.map(r => ({
+          actionType: r.action_type,
+          count: parseInt(r.count)
+        }))
+      }
+    });
+  } catch (error) {
+    logger.error('Error fetching public dashboard data:', error.message);
+    res.status(500).json({ error: 'Failed to fetch dashboard data' });
   }
 });
 

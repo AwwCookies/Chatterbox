@@ -96,7 +96,7 @@ router.post('/', requireUserAuth, attachTier, checkWebhookLimit, async (req, res
       return res.status(400).json({ error: 'Invalid Discord webhook URL' });
     }
 
-    const validTypes = ['tracked_user_message', 'mod_action', 'channel_live', 'channel_offline', 'channel_game_change'];
+    const validTypes = ['tracked_user_message', 'mod_action', 'channel_live', 'channel_offline', 'channel_game_change', 'channel_bits', 'channel_subscription', 'channel_gift_sub', 'channel_raid'];
     if (!validTypes.includes(webhookType)) {
       return res.status(400).json({ error: 'Invalid webhook type' });
     }

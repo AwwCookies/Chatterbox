@@ -25,6 +25,9 @@ import {
   Settings,
   Zap,
   Server,
+  Gem,
+  Gift,
+  Star,
 } from 'lucide-react';
 
 // Webhook type configurations
@@ -64,6 +67,34 @@ const WEBHOOK_TYPES = {
     color: 'text-purple-400',
     bgColor: 'bg-purple-500/10',
   },
+  channel_bits: {
+    label: 'Bits/Cheers',
+    description: 'Get notified when viewers cheer with bits',
+    icon: Gem,
+    color: 'text-purple-400',
+    bgColor: 'bg-purple-500/10',
+  },
+  channel_subscription: {
+    label: 'Subscriptions',
+    description: 'Get notified about new subs and resubs',
+    icon: Star,
+    color: 'text-yellow-400',
+    bgColor: 'bg-yellow-500/10',
+  },
+  channel_gift_sub: {
+    label: 'Gift Subs',
+    description: 'Get notified when someone gifts subs',
+    icon: Gift,
+    color: 'text-pink-400',
+    bgColor: 'bg-pink-500/10',
+  },
+  channel_raid: {
+    label: 'Raids',
+    description: 'Get notified when a channel gets raided',
+    icon: Zap,
+    color: 'text-orange-400',
+    bgColor: 'bg-orange-500/10',
+  },
 };
 
 // Preset colors for Discord embeds
@@ -85,6 +116,13 @@ const MOD_ACTION_TYPES = [
   { value: 'delete', label: 'Delete', description: 'Deleted messages' },
   { value: 'unban', label: 'Unban', description: 'Removed bans' },
   { value: 'untimeout', label: 'Untimeout', description: 'Removed timeouts' },
+];
+
+// Sub types for subscription webhooks
+const SUB_TYPES = [
+  { value: 'sub', label: 'New Sub', description: 'First-time subscribers' },
+  { value: 'resub', label: 'Resub', description: 'Returning subscribers' },
+  { value: 'prime', label: 'Prime', description: 'Amazon Prime subscriptions' },
 ];
 
 // Debounce helper
@@ -580,6 +618,13 @@ export default function WebhookModal({
   const [allChannels, setAllChannels] = useState(!webhook?.config?.channels?.length);
   const [actionTypes, setActionTypes] = useState(webhook?.config?.action_types || ['ban', 'timeout']);
   
+  // Monetization thresholds
+  const [minBits, setMinBits] = useState(webhook?.config?.min_bits || 0);
+  const [minGiftCount, setMinGiftCount] = useState(webhook?.config?.min_gift_count || 1);
+  const [minViewers, setMinViewers] = useState(webhook?.config?.min_viewers || 0);
+  const [minMonths, setMinMonths] = useState(webhook?.config?.min_months || 0);
+  const [subTypes, setSubTypes] = useState(webhook?.config?.sub_types || ['sub', 'resub', 'prime']);
+  
   const [saveUrlToBank, setSaveUrlToBank] = useState(false);
   const [savedUrlName, setSavedUrlName] = useState('');
   const [saving, setSaving] = useState(false);
@@ -620,6 +665,37 @@ export default function WebhookModal({
         config.action_types = actionTypes;
         if (!allChannels && selectedChannels.length > 0) {
           config.channels = selectedChannels;
+        }
+      } else if (formData.webhookType === 'channel_bits') {
+        if (!allChannels && selectedChannels.length > 0) {
+          config.channels = selectedChannels;
+        }
+        if (minBits > 0) {
+          config.min_bits = minBits;
+        }
+      } else if (formData.webhookType === 'channel_subscription') {
+        if (!allChannels && selectedChannels.length > 0) {
+          config.channels = selectedChannels;
+        }
+        if (subTypes.length > 0 && subTypes.length < 3) {
+          config.sub_types = subTypes;
+        }
+        if (minMonths > 0) {
+          config.min_months = minMonths;
+        }
+      } else if (formData.webhookType === 'channel_gift_sub') {
+        if (!allChannels && selectedChannels.length > 0) {
+          config.channels = selectedChannels;
+        }
+        if (minGiftCount > 1) {
+          config.min_gift_count = minGiftCount;
+        }
+      } else if (formData.webhookType === 'channel_raid') {
+        if (!allChannels && selectedChannels.length > 0) {
+          config.channels = selectedChannels;
+        }
+        if (minViewers > 0) {
+          config.min_viewers = minViewers;
         }
       } else {
         if (!allChannels && selectedChannels.length > 0) {
@@ -946,6 +1022,148 @@ export default function WebhookModal({
                   allChannels={allChannels}
                   setAllChannels={setAllChannels}
                 />
+              )}
+
+              {/* Bits webhook config */}
+              {formData.webhookType === 'channel_bits' && (
+                <div className="space-y-4">
+                  <ChannelPicker
+                    selectedChannels={selectedChannels}
+                    onToggle={handleToggleChannel}
+                    allChannels={allChannels}
+                    setAllChannels={setAllChannels}
+                  />
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Minimum Bits (0 = all)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="100"
+                      value={minBits}
+                      onChange={(e) => setMinBits(parseInt(e.target.value) || 0)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      placeholder="e.g., 100 to only trigger on 100+ bits"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Only trigger when someone cheers at least this many bits</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Subscription webhook config */}
+              {formData.webhookType === 'channel_subscription' && (
+                <div className="space-y-4">
+                  <ChannelPicker
+                    selectedChannels={selectedChannels}
+                    onToggle={handleToggleChannel}
+                    allChannels={allChannels}
+                    setAllChannels={setAllChannels}
+                  />
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">Sub Types</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { value: 'sub', label: 'New Sub' },
+                        { value: 'resub', label: 'Resub' },
+                        { value: 'prime', label: 'Prime' },
+                      ].map(({ value, label }) => {
+                        const isSelected = subTypes.includes(value);
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => {
+                              setSubTypes(prev =>
+                                isSelected ? prev.filter(t => t !== value) : [...prev, value]
+                              );
+                            }}
+                            className={`flex items-center gap-2 p-2 rounded-lg border text-sm transition-all ${
+                              isSelected
+                                ? 'border-yellow-500/50 bg-yellow-500/10 text-yellow-400'
+                                : 'border-gray-600 hover:border-gray-500 text-gray-300'
+                            }`}
+                          >
+                            <Star className="w-4 h-4" />
+                            <span>{label}</span>
+                            {isSelected && <Check className="w-3 h-3 ml-auto" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Minimum Months (0 = all)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={minMonths}
+                      onChange={(e) => setMinMonths(parseInt(e.target.value) || 0)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      placeholder="e.g., 12 for 1+ year subs only"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Only trigger for resubs with at least this many cumulative months</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Gift sub webhook config */}
+              {formData.webhookType === 'channel_gift_sub' && (
+                <div className="space-y-4">
+                  <ChannelPicker
+                    selectedChannels={selectedChannels}
+                    onToggle={handleToggleChannel}
+                    allChannels={allChannels}
+                    setAllChannels={setAllChannels}
+                  />
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Minimum Gift Count (1 = all)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={minGiftCount}
+                      onChange={(e) => setMinGiftCount(parseInt(e.target.value) || 1)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      placeholder="e.g., 5 to only trigger on 5+ gifted subs"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Only trigger when someone gifts at least this many subs at once</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Raid webhook config */}
+              {formData.webhookType === 'channel_raid' && (
+                <div className="space-y-4">
+                  <ChannelPicker
+                    selectedChannels={selectedChannels}
+                    onToggle={handleToggleChannel}
+                    allChannels={allChannels}
+                    setAllChannels={setAllChannels}
+                  />
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      Minimum Viewers (0 = all)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={minViewers}
+                      onChange={(e) => setMinViewers(parseInt(e.target.value) || 0)}
+                      className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      placeholder="e.g., 50 to only trigger on raids with 50+ viewers"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Only trigger for raids with at least this many viewers</p>
+                  </div>
+                </div>
               )}
             </div>
 

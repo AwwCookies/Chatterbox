@@ -14,8 +14,10 @@ import {
   blockIp, 
   unblockIp, 
   setIpRateLimit,
+  whitelistIp,
   deleteIpRule,
   getIpStatus,
+  getRealtimeIpStats,
   cleanupTrafficLogs
 } from '../middleware/trafficMiddleware.js';
 
@@ -170,6 +172,244 @@ router.get('/database', requireAuth, async (req, res) => {
   } catch (error) {
     logger.error('Error fetching database stats:', error.message);
     res.status(500).json({ error: 'Failed to fetch database statistics' });
+  }
+});
+
+/**
+ * GET /api/admin/dashboard
+ * Get comprehensive dashboard data - all stats in one call
+ * Optimized for the main dashboard view
+ */
+router.get('/dashboard', requireAuth, async (req, res) => {
+  try {
+    const [
+      // Core stats
+      messageCount,
+      userCount,
+      channelCount,
+      
+      // Messages by hour (last 24h)
+      messagesLast24h,
+      
+      // Messages by day (last 7 days)
+      messagesLast7d,
+      
+      // Top chatters (24h)
+      topChatters,
+      
+      // Channel activity (24h)
+      channelActivity,
+      
+      // Mod action breakdown (24h)
+      modActionBreakdown,
+      
+      // Peak hours (30 day pattern)
+      peakHours,
+      
+      // Recent mod actions
+      recentModActions,
+      
+      // Growth stats
+      messageGrowth,
+      userGrowth,
+      
+      // Emote usage
+      topEmotes
+    ] = await Promise.all([
+      // Core counts
+      query('SELECT COUNT(*) FROM messages'),
+      query('SELECT COUNT(*) FROM users'),
+      query('SELECT COUNT(*) FROM channels WHERE is_active = TRUE'),
+      
+      // Messages last 24h by hour
+      query(`
+        SELECT 
+          date_trunc('hour', timestamp) as hour,
+          COUNT(*) as count
+        FROM messages
+        WHERE timestamp > NOW() - INTERVAL '24 hours'
+        GROUP BY hour
+        ORDER BY hour
+      `),
+      
+      // Messages last 7d by day
+      query(`
+        SELECT 
+          date_trunc('day', timestamp)::date as date,
+          COUNT(*) as count
+        FROM messages
+        WHERE timestamp > NOW() - INTERVAL '7 days'
+        GROUP BY date
+        ORDER BY date
+      `),
+      
+      // Top chatters
+      query(`
+        SELECT 
+          u.username,
+          u.display_name,
+          COUNT(m.id) as message_count
+        FROM messages m
+        JOIN users u ON m.user_id = u.id
+        WHERE m.timestamp > NOW() - INTERVAL '24 hours'
+        GROUP BY u.id, u.username, u.display_name
+        ORDER BY message_count DESC
+        LIMIT 10
+      `),
+      
+      // Channel activity
+      query(`
+        SELECT 
+          c.name,
+          c.display_name,
+          COUNT(m.id) as message_count,
+          COUNT(DISTINCT m.user_id) as unique_users
+        FROM messages m
+        JOIN channels c ON m.channel_id = c.id
+        WHERE m.timestamp > NOW() - INTERVAL '24 hours'
+        GROUP BY c.id, c.name, c.display_name
+        ORDER BY message_count DESC
+        LIMIT 10
+      `),
+      
+      // Mod action breakdown
+      query(`
+        SELECT 
+          action_type,
+          COUNT(*) as count
+        FROM mod_actions
+        WHERE timestamp > NOW() - INTERVAL '24 hours'
+        GROUP BY action_type
+        ORDER BY count DESC
+      `),
+      
+      // Peak hours (30 day average)
+      query(`
+        SELECT 
+          EXTRACT(hour FROM timestamp)::int as hour,
+          ROUND(COUNT(*) / 30.0) as avg_count
+        FROM messages
+        WHERE timestamp > NOW() - INTERVAL '30 days'
+        GROUP BY hour
+        ORDER BY hour
+      `),
+      
+      // Recent mod actions
+      query(`
+        SELECT 
+          ma.id,
+          ma.action_type,
+          ma.reason,
+          ma.duration_seconds,
+          ma.timestamp,
+          u.username as target_username,
+          mod.username as moderator_username,
+          c.name as channel_name
+        FROM mod_actions ma
+        LEFT JOIN users u ON ma.target_user_id = u.id
+        LEFT JOIN users mod ON ma.moderator_id = mod.id
+        LEFT JOIN channels c ON ma.channel_id = c.id
+        ORDER BY ma.timestamp DESC
+        LIMIT 10
+      `),
+      
+      // Message growth (compare today vs yesterday)
+      query(`
+        SELECT
+          (SELECT COUNT(*) FROM messages WHERE timestamp > NOW() - INTERVAL '24 hours') as today,
+          (SELECT COUNT(*) FROM messages WHERE timestamp BETWEEN NOW() - INTERVAL '48 hours' AND NOW() - INTERVAL '24 hours') as yesterday
+      `),
+      
+      // User growth (new users today)
+      query(`
+        SELECT
+          (SELECT COUNT(*) FROM users WHERE first_seen > NOW() - INTERVAL '24 hours') as new_today,
+          (SELECT COUNT(*) FROM users WHERE first_seen BETWEEN NOW() - INTERVAL '48 hours' AND NOW() - INTERVAL '24 hours') as new_yesterday
+      `),
+      
+      // Top emotes (if table exists)
+      query(`
+        SELECT emote_name, SUM(usage_count) as total
+        FROM emote_usage
+        WHERE timestamp > NOW() - INTERVAL '24 hours'
+        GROUP BY emote_name
+        ORDER BY total DESC
+        LIMIT 10
+      `).catch(() => ({ rows: [] }))
+    ]);
+
+    // Calculate growth percentages
+    const msgToday = parseInt(messageGrowth.rows[0]?.today || 0);
+    const msgYesterday = parseInt(messageGrowth.rows[0]?.yesterday || 1);
+    const messageGrowthPct = ((msgToday - msgYesterday) / msgYesterday * 100).toFixed(1);
+    
+    const usersToday = parseInt(userGrowth.rows[0]?.new_today || 0);
+    const usersYesterday = parseInt(userGrowth.rows[0]?.new_yesterday || 1);
+    const userGrowthPct = usersYesterday > 0 
+      ? ((usersToday - usersYesterday) / usersYesterday * 100).toFixed(1)
+      : 0;
+
+    res.json({
+      overview: {
+        totalMessages: parseInt(messageCount.rows[0].count),
+        totalUsers: parseInt(userCount.rows[0].count),
+        activeChannels: parseInt(channelCount.rows[0].count),
+        messagesLast24h: messagesLast24h.rows.reduce((sum, r) => sum + parseInt(r.count), 0),
+        messageGrowth: parseFloat(messageGrowthPct),
+        newUsersToday: usersToday,
+        userGrowth: parseFloat(userGrowthPct)
+      },
+      charts: {
+        messagesHourly: messagesLast24h.rows.map(r => ({
+          hour: r.hour,
+          count: parseInt(r.count)
+        })),
+        messagesDaily: messagesLast7d.rows.map(r => ({
+          date: r.date,
+          count: parseInt(r.count)
+        })),
+        peakHours: peakHours.rows.map(r => ({
+          hour: parseInt(r.hour),
+          count: parseInt(r.avg_count)
+        }))
+      },
+      leaderboards: {
+        topChatters: topChatters.rows.map(r => ({
+          username: r.username,
+          displayName: r.display_name,
+          messageCount: parseInt(r.message_count)
+        })),
+        channelActivity: channelActivity.rows.map(r => ({
+          name: r.name,
+          displayName: r.display_name,
+          messageCount: parseInt(r.message_count),
+          uniqueUsers: parseInt(r.unique_users)
+        })),
+        topEmotes: topEmotes.rows.map(r => ({
+          name: r.emote_name,
+          count: parseInt(r.total)
+        }))
+      },
+      moderation: {
+        breakdown: modActionBreakdown.rows.map(r => ({
+          actionType: r.action_type,
+          count: parseInt(r.count)
+        })),
+        recent: recentModActions.rows.map(r => ({
+          id: r.id,
+          actionType: r.action_type,
+          reason: r.reason,
+          duration: r.duration_seconds,
+          timestamp: r.timestamp,
+          targetUsername: r.target_username,
+          moderatorUsername: r.moderator_username,
+          channelName: r.channel_name
+        }))
+      }
+    });
+  } catch (error) {
+    logger.error('Error fetching dashboard data:', error.message);
+    res.status(500).json({ error: 'Failed to fetch dashboard data' });
   }
 });
 
@@ -1169,6 +1409,20 @@ router.get('/traffic', requireAuth, async (req, res) => {
 });
 
 /**
+ * GET /api/admin/traffic/realtime
+ * Get real-time IP traffic stats from memory
+ */
+router.get('/traffic/realtime', requireAuth, async (req, res) => {
+  try {
+    const stats = getRealtimeIpStats();
+    res.json(stats);
+  } catch (error) {
+    logger.error('Error fetching realtime traffic stats:', error.message);
+    res.status(500).json({ error: 'Failed to fetch realtime traffic statistics' });
+  }
+});
+
+/**
  * DELETE /api/admin/traffic/cleanup
  * Clean up old traffic logs
  */
@@ -1289,6 +1543,31 @@ router.post('/ip-rules/rate-limit', requireAuth, async (req, res) => {
   } catch (error) {
     logger.error('Error setting IP rate limit:', error.message);
     res.status(500).json({ error: 'Failed to set IP rate limit' });
+  }
+});
+
+/**
+ * POST /api/admin/ip-rules/whitelist
+ * Whitelist an IP (bypass rate limits)
+ */
+router.post('/ip-rules/whitelist', requireAuth, async (req, res) => {
+  try {
+    const { ip, reason, expiresAt } = req.body;
+    
+    if (!ip) {
+      return res.status(400).json({ error: 'IP address is required' });
+    }
+    
+    await whitelistIp(ip, reason, expiresAt ? new Date(expiresAt) : null);
+    
+    res.json({ 
+      message: `IP ${ip} has been whitelisted`,
+      ip,
+      reason
+    });
+  } catch (error) {
+    logger.error('Error whitelisting IP:', error.message);
+    res.status(500).json({ error: 'Failed to whitelist IP' });
   }
 });
 

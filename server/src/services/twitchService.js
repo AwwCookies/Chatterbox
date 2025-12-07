@@ -4,6 +4,7 @@ import User from '../models/User.js';
 import Message from '../models/Message.js';
 import logger from '../utils/logger.js';
 import discordWebhookService from './discordWebhookService.js';
+import { query } from '../config/database.js';
 
 class TwitchService {
   constructor(archiveService, websocketService) {
@@ -123,6 +124,80 @@ class TwitchService {
           is_connected: false,
           timestamp: new Date().toISOString()
         });
+      }
+    });
+
+    // ==================== MONETIZATION EVENTS ====================
+
+    // Subscription (new sub or resub)
+    this.client.on('subscription', async (channel, username, method, message, userstate) => {
+      try {
+        await this.handleSubscription(channel, username, method, message, userstate);
+      } catch (error) {
+        logger.error('Error handling subscription:', error.message);
+      }
+    });
+
+    // Resub (separate event in some tmi.js versions)
+    this.client.on('resub', async (channel, username, months, message, userstate, methods) => {
+      try {
+        await this.handleResub(channel, username, months, message, userstate, methods);
+      } catch (error) {
+        logger.error('Error handling resub:', error.message);
+      }
+    });
+
+    // Gift subscription (single gift)
+    this.client.on('subgift', async (channel, username, streakMonths, recipient, methods, userstate) => {
+      try {
+        await this.handleSubGift(channel, username, streakMonths, recipient, methods, userstate);
+      } catch (error) {
+        logger.error('Error handling sub gift:', error.message);
+      }
+    });
+
+    // Mystery gift (mass gift subs)
+    this.client.on('submysterygift', async (channel, username, numbOfSubs, methods, userstate) => {
+      try {
+        await this.handleMysteryGift(channel, username, numbOfSubs, methods, userstate);
+      } catch (error) {
+        logger.error('Error handling mystery gift:', error.message);
+      }
+    });
+
+    // Prime paid upgrade
+    this.client.on('primepaidupgrade', async (channel, username, methods, userstate) => {
+      try {
+        await this.handlePrimePaidUpgrade(channel, username, methods, userstate);
+      } catch (error) {
+        logger.error('Error handling prime paid upgrade:', error.message);
+      }
+    });
+
+    // Gift paid upgrade
+    this.client.on('giftpaidupgrade', async (channel, username, sender, userstate) => {
+      try {
+        await this.handleGiftPaidUpgrade(channel, username, sender, userstate);
+      } catch (error) {
+        logger.error('Error handling gift paid upgrade:', error.message);
+      }
+    });
+
+    // Bits/Cheer
+    this.client.on('cheer', async (channel, userstate, message) => {
+      try {
+        await this.handleCheer(channel, userstate, message);
+      } catch (error) {
+        logger.error('Error handling cheer:', error.message);
+      }
+    });
+
+    // Raid
+    this.client.on('raided', async (channel, username, viewers, userstate) => {
+      try {
+        await this.handleRaid(channel, username, viewers, userstate);
+      } catch (error) {
+        logger.error('Error handling raid:', error.message);
       }
     });
   }
@@ -439,6 +514,405 @@ class TwitchService {
 
     // Note: We don't mark all messages as deleted on clear, just record the action
     logger.info(`Chat cleared in ${channelName}`);
+  }
+
+  // ==================== MONETIZATION HANDLERS ====================
+
+  /**
+   * Parse sub tier from methods object
+   */
+  parseSubTier(methods) {
+    if (!methods) return '1000';
+    if (methods.prime) return 'Prime';
+    if (methods.plan === '2000') return '2000';
+    if (methods.plan === '3000') return '3000';
+    return methods.plan || '1000';
+  }
+
+  /**
+   * Handle new subscription
+   */
+  async handleSubscription(channel, username, method, message, userstate) {
+    const channelName = channel.replace('#', '');
+    const channelRecord = await Channel.findOrCreate(channelName, userstate?.['room-id']);
+    const userRecord = await User.findOrCreate(username, userstate?.['user-id'], userstate?.['display-name']);
+    
+    const tier = this.parseSubTier(method);
+    const isPrime = method?.prime || false;
+    
+    await query(`
+      INSERT INTO channel_subscriptions 
+        (channel_id, user_id, sub_type, tier, is_prime, cumulative_months, message_text, timestamp, message_id, metadata)
+      VALUES ($1, $2, 'sub', $3, $4, 1, $5, NOW(), $6, $7)
+    `, [
+      channelRecord.id,
+      userRecord.id,
+      tier,
+      isPrime,
+      message || null,
+      userstate?.id || null,
+      JSON.stringify({ method })
+    ]);
+
+    // Broadcast to WebSocket
+    this.websocketService.broadcastToChannel(channelName, 'subscription', {
+      type: 'sub',
+      username,
+      displayName: userRecord.display_name,
+      tier,
+      isPrime,
+      message,
+      channelName,
+      timestamp: new Date().toISOString()
+    });
+
+    // Trigger webhooks
+    discordWebhookService.sendSubscription({
+      username,
+      displayName: userRecord.display_name,
+      channelName,
+      subType: 'sub',
+      tier,
+      isPrime,
+      cumulativeMonths: 1,
+      streakMonths: null,
+      message,
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info(`New sub in ${channelName}: ${username} (${isPrime ? 'Prime' : `Tier ${tier === '1000' ? '1' : tier === '2000' ? '2' : '3'}`})`);
+  }
+
+  /**
+   * Handle resub
+   */
+  async handleResub(channel, username, months, message, userstate, methods) {
+    const channelName = channel.replace('#', '');
+    const channelRecord = await Channel.findOrCreate(channelName, userstate?.['room-id']);
+    const userRecord = await User.findOrCreate(username, userstate?.['user-id'], userstate?.['display-name']);
+    
+    const tier = this.parseSubTier(methods);
+    const isPrime = methods?.prime || false;
+    const cumulativeMonths = userstate?.['msg-param-cumulative-months'] || months || 1;
+    const streakMonths = userstate?.['msg-param-streak-months'] || null;
+    
+    await query(`
+      INSERT INTO channel_subscriptions 
+        (channel_id, user_id, sub_type, tier, is_prime, cumulative_months, streak_months, message_text, timestamp, message_id, metadata)
+      VALUES ($1, $2, 'resub', $3, $4, $5, $6, $7, NOW(), $8, $9)
+    `, [
+      channelRecord.id,
+      userRecord.id,
+      tier,
+      isPrime,
+      cumulativeMonths,
+      streakMonths,
+      message || null,
+      userstate?.id || null,
+      JSON.stringify({ methods, months })
+    ]);
+
+    // Broadcast to WebSocket
+    this.websocketService.broadcastToChannel(channelName, 'subscription', {
+      type: 'resub',
+      username,
+      displayName: userRecord.display_name,
+      tier,
+      isPrime,
+      cumulativeMonths,
+      streakMonths,
+      message,
+      channelName,
+      timestamp: new Date().toISOString()
+    });
+
+    // Trigger webhooks
+    discordWebhookService.sendSubscription({
+      username,
+      displayName: userRecord.display_name,
+      channelName,
+      subType: 'resub',
+      tier,
+      isPrime,
+      cumulativeMonths,
+      streakMonths,
+      message,
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info(`Resub in ${channelName}: ${username} (${cumulativeMonths} months)`);
+  }
+
+  /**
+   * Handle gift subscription
+   */
+  async handleSubGift(channel, username, streakMonths, recipient, methods, userstate) {
+    const channelName = channel.replace('#', '');
+    const channelRecord = await Channel.findOrCreate(channelName, userstate?.['room-id']);
+    const gifterRecord = await User.findOrCreate(username, userstate?.['user-id'], userstate?.['display-name']);
+    const recipientRecord = await User.findOrCreate(recipient);
+    
+    const tier = this.parseSubTier(methods);
+    
+    await query(`
+      INSERT INTO channel_subscriptions 
+        (channel_id, user_id, sub_type, tier, gift_recipient_id, gift_count, timestamp, message_id, metadata)
+      VALUES ($1, $2, 'subgift', $3, $4, 1, NOW(), $5, $6)
+    `, [
+      channelRecord.id,
+      gifterRecord.id,
+      tier,
+      recipientRecord.id,
+      userstate?.id || null,
+      JSON.stringify({ streakMonths, methods })
+    ]);
+
+    // Broadcast to WebSocket
+    this.websocketService.broadcastToChannel(channelName, 'subscription', {
+      type: 'subgift',
+      username,
+      displayName: gifterRecord.display_name,
+      recipient,
+      tier,
+      channelName,
+      timestamp: new Date().toISOString()
+    });
+
+    // Trigger webhooks (single gift)
+    discordWebhookService.sendGiftSub({
+      username,
+      displayName: gifterRecord.display_name,
+      channelName,
+      giftCount: 1,
+      recipient,
+      tier,
+      isMysteryGift: false,
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info(`Gift sub in ${channelName}: ${username} gifted to ${recipient}`);
+  }
+
+  /**
+   * Handle mystery gift (mass gift subs)
+   */
+  async handleMysteryGift(channel, username, numbOfSubs, methods, userstate) {
+    const channelName = channel.replace('#', '');
+    const channelRecord = await Channel.findOrCreate(channelName, userstate?.['room-id']);
+    const gifterRecord = await User.findOrCreate(username, userstate?.['user-id'], userstate?.['display-name']);
+    
+    const tier = this.parseSubTier(methods);
+    const giftCount = parseInt(numbOfSubs) || 1;
+    
+    await query(`
+      INSERT INTO channel_subscriptions 
+        (channel_id, user_id, sub_type, tier, gift_count, timestamp, message_id, metadata)
+      VALUES ($1, $2, 'submysterygift', $3, $4, NOW(), $5, $6)
+    `, [
+      channelRecord.id,
+      gifterRecord.id,
+      tier,
+      giftCount,
+      userstate?.id || null,
+      JSON.stringify({ methods, numbOfSubs })
+    ]);
+
+    // Broadcast to WebSocket
+    this.websocketService.broadcastToChannel(channelName, 'subscription', {
+      type: 'submysterygift',
+      username,
+      displayName: gifterRecord.display_name,
+      giftCount,
+      tier,
+      channelName,
+      timestamp: new Date().toISOString()
+    });
+
+    // Trigger webhooks (mystery/mass gift)
+    discordWebhookService.sendGiftSub({
+      username,
+      displayName: gifterRecord.display_name,
+      channelName,
+      giftCount,
+      recipient: null,
+      tier,
+      isMysteryGift: true,
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info(`Mystery gift in ${channelName}: ${username} gifted ${giftCount} subs!`);
+  }
+
+  /**
+   * Handle prime paid upgrade
+   */
+  async handlePrimePaidUpgrade(channel, username, methods, userstate) {
+    const channelName = channel.replace('#', '');
+    const channelRecord = await Channel.findOrCreate(channelName, userstate?.['room-id']);
+    const userRecord = await User.findOrCreate(username, userstate?.['user-id'], userstate?.['display-name']);
+    
+    const tier = this.parseSubTier(methods);
+    
+    await query(`
+      INSERT INTO channel_subscriptions 
+        (channel_id, user_id, sub_type, tier, timestamp, message_id, metadata)
+      VALUES ($1, $2, 'primepaidupgrade', $3, NOW(), $4, $5)
+    `, [
+      channelRecord.id,
+      userRecord.id,
+      tier,
+      userstate?.id || null,
+      JSON.stringify({ methods })
+    ]);
+
+    // Broadcast to WebSocket
+    this.websocketService.broadcastToChannel(channelName, 'subscription', {
+      type: 'primepaidupgrade',
+      username,
+      displayName: userRecord.display_name,
+      tier,
+      channelName,
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info(`Prime upgrade in ${channelName}: ${username}`);
+  }
+
+  /**
+   * Handle gift paid upgrade
+   */
+  async handleGiftPaidUpgrade(channel, username, sender, userstate) {
+    const channelName = channel.replace('#', '');
+    const channelRecord = await Channel.findOrCreate(channelName, userstate?.['room-id']);
+    const userRecord = await User.findOrCreate(username, userstate?.['user-id'], userstate?.['display-name']);
+    
+    await query(`
+      INSERT INTO channel_subscriptions 
+        (channel_id, user_id, sub_type, tier, timestamp, message_id, metadata)
+      VALUES ($1, $2, 'giftpaidupgrade', '1000', NOW(), $3, $4)
+    `, [
+      channelRecord.id,
+      userRecord.id,
+      userstate?.id || null,
+      JSON.stringify({ sender })
+    ]);
+
+    // Broadcast to WebSocket
+    this.websocketService.broadcastToChannel(channelName, 'subscription', {
+      type: 'giftpaidupgrade',
+      username,
+      displayName: userRecord.display_name,
+      sender,
+      channelName,
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info(`Gift upgrade in ${channelName}: ${username} (from ${sender})`);
+  }
+
+  /**
+   * Handle cheer/bits
+   */
+  async handleCheer(channel, userstate, message) {
+    const channelName = channel.replace('#', '');
+    const channelRecord = await Channel.findOrCreate(channelName, userstate?.['room-id']);
+    const userRecord = await User.findOrCreate(
+      userstate.username,
+      userstate['user-id'],
+      userstate['display-name']
+    );
+    
+    const bitsAmount = parseInt(userstate.bits) || 0;
+    
+    if (bitsAmount > 0) {
+      await query(`
+        INSERT INTO channel_bits 
+          (channel_id, user_id, bits_amount, message_text, timestamp, message_id, metadata)
+        VALUES ($1, $2, $3, $4, NOW(), $5, $6)
+      `, [
+        channelRecord.id,
+        userRecord.id,
+        bitsAmount,
+        message || null,
+        userstate.id || null,
+        JSON.stringify({ badges: userstate.badges })
+      ]);
+
+      // Broadcast to WebSocket
+      this.websocketService.broadcastToChannel(channelName, 'bits', {
+        username: userRecord.username,
+        displayName: userRecord.display_name,
+        amount: bitsAmount,
+        message,
+        channelName,
+        timestamp: new Date().toISOString()
+      });
+
+      // Trigger webhooks
+      discordWebhookService.sendBits({
+        username: userRecord.username,
+        displayName: userRecord.display_name,
+        channelName,
+        bitsAmount,
+        message,
+        timestamp: new Date().toISOString()
+      });
+
+      logger.info(`Bits in ${channelName}: ${userRecord.username} cheered ${bitsAmount} bits`);
+    }
+  }
+
+  /**
+   * Handle raid
+   */
+  async handleRaid(channel, username, viewers, userstate) {
+    const channelName = channel.replace('#', '');
+    const channelRecord = await Channel.findOrCreate(channelName, userstate?.['room-id']);
+    
+    // Try to find/create the raider's channel if they're being monitored
+    let raiderChannelId = null;
+    try {
+      const raiderChannel = await Channel.getByName(username);
+      raiderChannelId = raiderChannel?.id || null;
+    } catch (e) {
+      // Raider channel not in our system, that's fine
+    }
+    
+    const viewerCount = parseInt(viewers) || 0;
+    const displayName = userstate?.['msg-param-displayName'] || userstate?.['display-name'] || username;
+    
+    await query(`
+      INSERT INTO channel_raids 
+        (channel_id, raider_channel_id, raider_name, raider_display_name, viewer_count, timestamp, metadata)
+      VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+    `, [
+      channelRecord.id,
+      raiderChannelId,
+      username,
+      displayName,
+      viewerCount,
+      JSON.stringify({ userstate })
+    ]);
+
+    // Broadcast to WebSocket
+    this.websocketService.broadcastToChannel(channelName, 'raid', {
+      raiderName: username,
+      raiderDisplayName: displayName,
+      viewerCount,
+      channelName,
+      timestamp: new Date().toISOString()
+    });
+
+    // Trigger webhooks
+    discordWebhookService.sendRaid({
+      raiderName: username,
+      raiderDisplayName: displayName,
+      channelName,
+      viewerCount,
+      timestamp: new Date().toISOString()
+    });
+
+    logger.info(`Raid in ${channelName}: ${username} with ${viewerCount} viewers`);
   }
 
   /**

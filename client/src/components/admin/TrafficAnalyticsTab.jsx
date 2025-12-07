@@ -48,7 +48,7 @@ export default function TrafficAnalyticsTab() {
     });
 
     return filtered;
-  }, [stats?.ipStats, searchIp, sortBy, sortDir]);
+  }, [stats?.topIps, searchIp, sortBy, sortDir]);
 
   // Format time ago
   const formatTimeAgo = (dateStr) => {

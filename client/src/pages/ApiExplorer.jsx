@@ -142,6 +142,21 @@ const apiEndpoints = [
     ]
   },
   {
+    category: 'Channel Monetization',
+    icon: Database,
+    color: 'amber',
+    description: 'Bits, subs, gift subs, hype trains, and raids',
+    endpoints: [
+      { method: 'GET', path: '/channels/:name/monetization', description: 'Monetization summary', params: ['name', 'days'], auth: 'none' },
+      { method: 'GET', path: '/channels/:name/monetization/top-gifters', description: 'Top gift sub givers', params: ['name', 'days', 'limit'], auth: 'none' },
+      { method: 'GET', path: '/channels/:name/monetization/top-bits', description: 'Top bit cheerers', params: ['name', 'days', 'limit'], auth: 'none' },
+      { method: 'GET', path: '/channels/:name/monetization/recent-subs', description: 'Recent subscriptions', params: ['name', 'limit', 'offset', 'type'], auth: 'none' },
+      { method: 'GET', path: '/channels/:name/monetization/recent-bits', description: 'Recent bit cheers', params: ['name', 'limit', 'offset'], auth: 'none' },
+      { method: 'GET', path: '/channels/:name/monetization/hype-trains', description: 'Hype train history', params: ['name', 'limit', 'offset'], auth: 'none' },
+      { method: 'GET', path: '/channels/:name/monetization/raids', description: 'Raid history', params: ['name', 'limit', 'offset'], auth: 'none' },
+    ]
+  },
+  {
     category: 'Mod Actions',
     icon: Shield,
     color: 'red',
@@ -192,6 +207,7 @@ const apiEndpoints = [
     color: 'indigo',
     description: 'Server administration and monitoring',
     endpoints: [
+      { method: 'GET', path: '/admin/dashboard', description: 'Comprehensive dashboard data (stats, charts, leaderboards)', params: [], auth: 'apiKey' },
       { method: 'GET', path: '/admin/system', description: 'System information', params: [], auth: 'apiKey' },
       { method: 'GET', path: '/admin/database', description: 'Database statistics', params: [], auth: 'apiKey' },
       { method: 'GET', path: '/admin/services', description: 'Services status', params: [], auth: 'apiKey' },
@@ -222,6 +238,7 @@ const apiEndpoints = [
     description: 'Traffic monitoring and analytics',
     endpoints: [
       { method: 'GET', path: '/admin/traffic', description: 'Traffic analytics', params: ['timeRange'], auth: 'apiKey' },
+      { method: 'GET', path: '/admin/traffic/realtime', description: 'Real-time IP traffic stats', params: [], auth: 'apiKey' },
       { method: 'DELETE', path: '/admin/traffic/cleanup', description: 'Cleanup old traffic logs', params: [], body: { olderThanDays: 30 }, auth: 'apiKey' },
     ]
   },
@@ -229,13 +246,14 @@ const apiEndpoints = [
     category: 'Admin - IP Rules',
     icon: Shield,
     color: 'rose',
-    description: 'IP blocking and rate limiting',
+    description: 'IP blocking, rate limiting, and whitelisting',
     endpoints: [
       { method: 'GET', path: '/admin/ip-rules', description: 'List all IP rules', params: [], auth: 'apiKey' },
       { method: 'GET', path: '/admin/ip-rules/:ip/status', description: 'Get IP status', params: ['ip'], auth: 'apiKey' },
       { method: 'POST', path: '/admin/ip-rules/block', description: 'Block an IP', params: [], body: { ip: '192.168.1.100', reason: 'Abuse', expiresAt: null }, auth: 'apiKey' },
       { method: 'POST', path: '/admin/ip-rules/unblock', description: 'Unblock an IP', params: [], body: { ip: '192.168.1.100' }, auth: 'apiKey' },
       { method: 'POST', path: '/admin/ip-rules/rate-limit', description: 'Set custom rate limit for IP', params: [], body: { ip: '192.168.1.100', limit: 500, expiresAt: null }, auth: 'apiKey' },
+      { method: 'POST', path: '/admin/ip-rules/whitelist', description: 'Whitelist an IP (bypass rate limits)', params: [], body: { ip: '192.168.1.100', reason: 'Trusted service', expiresAt: null }, auth: 'apiKey' },
       { method: 'DELETE', path: '/admin/ip-rules/:id', description: 'Delete IP rule', params: ['id'], auth: 'apiKey' },
     ]
   },

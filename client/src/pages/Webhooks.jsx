@@ -38,6 +38,10 @@ import {
   RotateCcw,
   Clock,
   Filter,
+  Gem,
+  Gift,
+  Star,
+  Zap,
 } from 'lucide-react';
 
 // Webhook type configurations
@@ -76,6 +80,34 @@ const WEBHOOK_TYPES = {
     icon: Radio,
     color: 'text-purple-400',
     bgColor: 'bg-purple-500/10',
+  },
+  channel_bits: {
+    label: 'Bits/Cheers',
+    description: 'Get notified when viewers cheer with bits',
+    icon: Gem,
+    color: 'text-purple-400',
+    bgColor: 'bg-purple-500/10',
+  },
+  channel_subscription: {
+    label: 'Subscriptions',
+    description: 'Get notified about new subs and resubs',
+    icon: Star,
+    color: 'text-yellow-400',
+    bgColor: 'bg-yellow-500/10',
+  },
+  channel_gift_sub: {
+    label: 'Gift Subs',
+    description: 'Get notified when someone gifts subs',
+    icon: Gift,
+    color: 'text-pink-400',
+    bgColor: 'bg-pink-500/10',
+  },
+  channel_raid: {
+    label: 'Raids',
+    description: 'Get notified when a channel gets raided',
+    icon: Zap,
+    color: 'text-orange-400',
+    bgColor: 'bg-orange-500/10',
   },
 };
 
@@ -134,8 +166,25 @@ function WebhookCard({ webhook, onEdit, onDelete, onTest, onToggle, onMute, onDu
     }
     if (config.channels?.length) {
       parts.push(`${config.channels.length} channel${config.channels.length > 1 ? 's' : ''}`);
-    } else if (webhook.webhook_type !== 'tracked_user_message') {
+    } else if (!['tracked_user_message'].includes(webhook.webhook_type)) {
       parts.push('All channels');
+    }
+    
+    // Monetization webhook thresholds
+    if (config.min_bits) {
+      parts.push(`≥${config.min_bits.toLocaleString()} bits`);
+    }
+    if (config.min_gift_count) {
+      parts.push(`≥${config.min_gift_count} gifts`);
+    }
+    if (config.min_viewers) {
+      parts.push(`≥${config.min_viewers} viewers`);
+    }
+    if (config.min_months) {
+      parts.push(`≥${config.min_months} months`);
+    }
+    if (config.sub_types?.length) {
+      parts.push(config.sub_types.join(', '));
     }
     
     return parts.join(' • ') || 'No configuration';

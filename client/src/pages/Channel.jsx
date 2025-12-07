@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useChannel, useChannelStats, useChannelTopUsers } from '../hooks/useChannels';
 import { useInfiniteChannelMessages, useInfiniteChannelModActions, useInfiniteChannelLinks } from '../hooks/useInfiniteData';
@@ -12,6 +12,7 @@ import { MobileChannel } from './mobile';
 import { formatDateTime, formatNumber, formatRelative, formatDuration } from '../utils/formatters';
 import LoadingSpinner from '../components/common/LoadingSpinner';
 import InfiniteScroll, { InfiniteScrollLoader, InfiniteScrollEmpty } from '../components/common/InfiniteScroll';
+import RefreshControl from '../components/common/RefreshControl';
 import LiveFeed from '../components/chat/LiveFeed';
 import LinkPanel from '../components/chat/LinkPanel';
 import LinkPreview from '../components/chat/LinkPreview';
@@ -20,6 +21,7 @@ import MessageList from '../components/chat/MessageList';
 import ModActionList from '../components/moderation/ModActionList';
 import ChannelSettingsTab from '../components/channel/ChannelSettingsTab';
 import ChannelAnalyticsTab from '../components/chat/ChannelAnalyticsTab';
+import ChannelMonetizationTab from '../components/channel/ChannelMonetizationTab';
 import { 
   Radio, 
   Hash, 
@@ -40,7 +42,8 @@ import {
   BarChart3,
   Eye,
   Gamepad2,
-  Zap
+  Zap,
+  DollarSign
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 
@@ -64,9 +67,9 @@ function Channel() {
   }
   
   // Fetch channel data
-  const { data: channel, isLoading: channelLoading, error: channelError } = useChannel(name);
-  const { data: statsData, isLoading: statsLoading } = useChannelStats(name);
-  const { data: topUsersData, isLoading: topUsersLoading } = useChannelTopUsers(name, { limit: 10 });
+  const { data: channel, isLoading: channelLoading, error: channelError, refetch: refetchChannel } = useChannel(name);
+  const { data: statsData, isLoading: statsLoading, refetch: refetchStats } = useChannelStats(name);
+  const { data: topUsersData, isLoading: topUsersLoading, refetch: refetchTopUsers } = useChannelTopUsers(name, { limit: 10 });
 
   // Subscribe to global WebSocket for real-time channel status updates
   const { channelStatuses } = useGlobalWebSocket();
@@ -97,6 +100,8 @@ function Channel() {
     hasNextPage: hasMoreMessages,
     fetchNextPage: fetchMoreMessages,
     isFetchingNextPage: isFetchingMoreMessages,
+    refetch: refetchMessages,
+    isFetching: isRefetchingMessages,
   } = useInfiniteChannelMessages(name, { limit: 50 });
 
   const {
@@ -105,6 +110,8 @@ function Channel() {
     hasNextPage: hasMoreModActions,
     fetchNextPage: fetchMoreModActions,
     isFetchingNextPage: isFetchingMoreModActions,
+    refetch: refetchModActions,
+    isFetching: isRefetchingModActions,
   } = useInfiniteChannelModActions(name, { limit: 50 });
 
   const {
@@ -113,6 +120,8 @@ function Channel() {
     hasNextPage: hasMoreLinks,
     fetchNextPage: fetchMoreLinks,
     isFetchingNextPage: isFetchingMoreLinks,
+    refetch: refetchLinks,
+    isFetching: isRefetchingLinks,
   } = useInfiniteChannelLinks(name, { limit: resultsPerPage });
 
   // Flatten paginated data
@@ -167,6 +176,35 @@ function Channel() {
       deletes: actions.find(a => a.action_type === 'delete')?.count || 0,
     };
   }, [statsData]);
+
+  // Refresh callbacks for tabs (memoized to prevent infinite loops)
+  const [analyticsKey, setAnalyticsKey] = useState(0);
+  const [monetizationKey, setMonetizationKey] = useState(0);
+  
+  const handleRefreshMessages = useCallback(() => {
+    refetchMessages();
+  }, [refetchMessages]);
+  
+  const handleRefreshModActions = useCallback(() => {
+    refetchModActions();
+  }, [refetchModActions]);
+  
+  const handleRefreshLinks = useCallback(() => {
+    refetchLinks();
+  }, [refetchLinks]);
+  
+  const handleRefreshUsers = useCallback(() => {
+    refetchTopUsers();
+  }, [refetchTopUsers]);
+  
+  const handleRefreshAnalytics = useCallback(() => {
+    refetchStats();
+    setAnalyticsKey(k => k + 1);
+  }, [refetchStats]);
+  
+  const handleRefreshMonetization = useCallback(() => {
+    setMonetizationKey(k => k + 1);
+  }, []);
 
   if (channelLoading) {
     return (
@@ -399,6 +437,7 @@ function Channel() {
             { id: 'live', label: 'Live Feed', icon: Radio },
             { id: 'messages', label: 'Message History', icon: MessageSquare },
             { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+            { id: 'monetization', label: 'Monetization', icon: DollarSign },
             { id: 'links', label: 'Links', icon: LinkIcon, count: totalLinks },
             { id: 'moderation', label: 'Mod Actions', icon: Shield },
             { id: 'users', label: 'Top Users', icon: TrendingUp },
@@ -426,7 +465,7 @@ function Channel() {
       </div>
 
       {/* Tab Content */}
-      <div className={activeTab === 'live' ? 'flex gap-6' : 'grid grid-cols-1 lg:grid-cols-3 gap-6'}>
+      <div className={activeTab === 'live' ? 'flex gap-6' : ''}>
         {/* Links Panel - Only on Live tab */}
         {activeTab === 'live' && (
           <LinkPanel 
@@ -437,7 +476,7 @@ function Channel() {
         )}
 
         {/* Main Content */}
-        <div className={activeTab === 'live' ? 'flex-1 min-w-0' : 'lg:col-span-2'}>
+        <div className={activeTab === 'live' ? 'flex-1 min-w-0' : 'w-full'}>
           {activeTab === 'live' && (
             <div className="bg-twitch-gray rounded-lg border border-gray-700 h-[600px]">
               <LiveFeed 
@@ -450,18 +489,25 @@ function Channel() {
           )}
 
           {activeTab === 'messages' && (
-            <div className="bg-twitch-gray rounded-lg border border-gray-700">
+            <div className="bg-twitch-gray rounded-lg border border-gray-700 max-w-5xl mx-auto">
               <div className="p-4 border-b border-gray-700 flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-white flex items-center">
                   <MessageSquare className="w-5 h-5 mr-2 text-twitch-purple" />
                   Message History
                 </h2>
-                <Link 
-                  to={`/messages?channel=${name}`}
-                  className="text-sm text-twitch-purple hover:underline"
-                >
-                  View all & search
-                </Link>
+                <div className="flex items-center gap-4">
+                  <RefreshControl
+                    onRefresh={handleRefreshMessages}
+                    isLoading={isRefetchingMessages}
+                    storageKey={`channel_${name}_messages`}
+                  />
+                  <Link 
+                    to={`/messages?channel=${name}`}
+                    className="text-sm text-twitch-purple hover:underline"
+                  >
+                    View all & search
+                  </Link>
+                </div>
               </div>
               <div className="max-h-[550px] overflow-y-auto">
                 {messagesLoading ? (
@@ -492,24 +538,51 @@ function Channel() {
           )}
 
           {activeTab === 'analytics' && (
-            <div className="col-span-full">
-              <ChannelAnalyticsTab channelName={name} />
+            <div className="w-full">
+              <div className="flex items-center justify-end mb-4">
+                <RefreshControl
+                  onRefresh={handleRefreshAnalytics}
+                  isLoading={statsLoading}
+                  storageKey={`channel_${name}_analytics`}
+                />
+              </div>
+              <ChannelAnalyticsTab key={analyticsKey} channelName={name} />
+            </div>
+          )}
+
+          {activeTab === 'monetization' && (
+            <div className="w-full">
+              <div className="flex items-center justify-end mb-4">
+                <RefreshControl
+                  onRefresh={handleRefreshMonetization}
+                  isLoading={false}
+                  storageKey={`channel_${name}_monetization`}
+                />
+              </div>
+              <ChannelMonetizationTab key={monetizationKey} channelName={name} />
             </div>
           )}
 
           {activeTab === 'moderation' && (
-            <div className="bg-twitch-gray rounded-lg border border-gray-700">
+            <div className="bg-twitch-gray rounded-lg border border-gray-700 max-w-5xl mx-auto">
               <div className="p-4 border-b border-gray-700 flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-white flex items-center">
                   <Shield className="w-5 h-5 mr-2 text-red-400" />
                   Mod Actions
                 </h2>
-                <Link 
-                  to={`/moderation?channel=${name}`}
-                  className="text-sm text-twitch-purple hover:underline"
-                >
-                  View all
-                </Link>
+                <div className="flex items-center gap-4">
+                  <RefreshControl
+                    onRefresh={handleRefreshModActions}
+                    isLoading={isRefetchingModActions}
+                    storageKey={`channel_${name}_moderation`}
+                  />
+                  <Link 
+                    to={`/moderation?channel=${name}`}
+                    className="text-sm text-twitch-purple hover:underline"
+                  >
+                    View all
+                  </Link>
+                </div>
               </div>
               <div className="max-h-[550px] overflow-y-auto p-4">
                 {modActionsLoading ? (
@@ -539,7 +612,18 @@ function Channel() {
           )}
 
           {activeTab === 'links' && (
-            <div className="bg-twitch-gray rounded-lg border border-gray-700 p-4">
+            <div className="bg-twitch-gray rounded-lg border border-gray-700 p-4 max-w-5xl mx-auto">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-white flex items-center">
+                  <LinkIcon className="w-5 h-5 mr-2 text-blue-400" />
+                  Links ({formatNumber(totalLinks)})
+                </h2>
+                <RefreshControl
+                  onRefresh={handleRefreshLinks}
+                  isLoading={isRefetchingLinks}
+                  storageKey={`channel_${name}_links`}
+                />
+              </div>
               <InfiniteScroll
                 hasNextPage={hasMoreLinks}
                 isFetchingNextPage={isFetchingMoreLinks}
@@ -558,12 +642,17 @@ function Channel() {
           )}
 
           {activeTab === 'users' && (
-            <div className="bg-twitch-gray rounded-lg border border-gray-700">
-              <div className="p-4 border-b border-gray-700">
+            <div className="bg-twitch-gray rounded-lg border border-gray-700 max-w-3xl mx-auto">
+              <div className="p-4 border-b border-gray-700 flex items-center justify-between">
                 <h2 className="text-lg font-semibold text-white flex items-center">
                   <TrendingUp className="w-5 h-5 mr-2 text-green-400" />
                   Top Chatters
                 </h2>
+                <RefreshControl
+                  onRefresh={handleRefreshUsers}
+                  isLoading={topUsersLoading}
+                  storageKey={`channel_${name}_users`}
+                />
               </div>
               <div className="p-4">
                 {topUsersLoading ? (
@@ -684,7 +773,7 @@ function Channel() {
 
         {/* Settings Tab */}
         {activeTab === 'settings' && (
-          <div className="lg:col-span-3">
+          <div className="w-full max-w-4xl mx-auto">
             <ChannelSettingsTab channelName={name} />
           </div>
         )}
