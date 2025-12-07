@@ -30,7 +30,7 @@ const navItems = [
   { path: '/messages', icon: MessageSquare, label: 'Messages' },
   { path: '/users', icon: Users, label: 'Users' },
   { path: '/moderation', icon: Shield, label: 'Moderation' },
-  { path: '/channels', icon: Hash, label: 'Channels' },
+  // { path: '/channels', icon: Hash, label: 'Channels' },
 ];
 
 function Sidebar() {

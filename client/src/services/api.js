@@ -43,10 +43,12 @@ api.interceptors.request.use((config) => {
     (config.url?.startsWith('/oauth/') && !config.url?.includes('/login') && !config.url?.includes('/callback') && !config.url?.includes('/refresh')) ||
     config.url?.startsWith('/chat/') ||
     config.url?.startsWith('/webhooks') ||
+    config.url?.startsWith('/discord') ||
     config.url?.startsWith('/admin/oauth-users') ||
     config.url?.startsWith('/admin/tiers') ||
     config.url?.startsWith('/admin/users/') ||
     config.url?.startsWith('/admin/usage') ||
+    config.url?.startsWith('/admin/logs') ||
     config.url?.startsWith('/me/')
   );
   
@@ -172,14 +174,30 @@ export const chatApi = {
   getPermissions: (channel) => api.get(`/chat/permissions/${channel}`),
 };
 
+// Discord OAuth API
+export const discordApi = {
+  getStatus: () => api.get('/discord/status'),
+  getAuthUrl: (returnUrl) => api.get('/discord/connect', { params: { returnUrl } }),
+  disconnect: (deleteWebhooks = false) => api.post('/discord/disconnect', { deleteWebhooks }),
+  getGuilds: (refresh = false) => api.get('/discord/guilds', { params: { refresh } }),
+  getChannels: (guildId, refresh = false) => api.get(`/discord/guilds/${guildId}/channels`, { params: { refresh } }),
+  createWebhook: (guildId, channelId, data) => api.post(`/discord/guilds/${guildId}/channels/${channelId}/webhook`, data),
+  refresh: () => api.post('/discord/refresh'),
+};
+
 // Webhooks API
 export const webhooksApi = {
   // User webhooks
   getAll: () => api.get('/webhooks'),
   create: (data) => api.post('/webhooks', data),
   update: (id, data) => api.put(`/webhooks/${id}`, data),
-  delete: (id) => api.delete(`/webhooks/${id}`),
+  delete: (id, deleteFromDiscord = true) => api.delete(`/webhooks/${id}`, { params: { deleteFromDiscord } }),
   test: (id) => api.post(`/webhooks/${id}/test`),
+  duplicate: (id, name) => api.post(`/webhooks/${id}/duplicate`, { name }),
+  toggleMute: (id) => api.post(`/webhooks/${id}/mute`),
+  resetCount: (id) => api.post(`/webhooks/${id}/reset-count`),
+  setFolder: (id, folder) => api.post(`/webhooks/${id}/folder`, { folder }),
+  getFolders: () => api.get('/webhooks/folders'),
   
   // Saved URL bank
   getSavedUrls: () => api.get('/webhooks/urls'),
@@ -271,6 +289,12 @@ export const adminApi = {
   unblockIp: (ip) => api.post('/admin/ip-rules/unblock', { ip }),
   setIpRateLimit: (ip, limit, expiresAt) => api.post('/admin/ip-rules/rate-limit', { ip, limit, expiresAt }),
   deleteIpRule: (id) => api.delete(`/admin/ip-rules/${id}`),
+  
+  // Server logs
+  getLogs: (params) => api.get('/admin/logs', { params, requiresAuth: true }),
+  getLogStats: () => api.get('/admin/logs/stats', { requiresAuth: true }),
+  streamLogs: (lastId) => api.get('/admin/logs/stream', { params: { lastId }, requiresAuth: true }),
+  clearLogs: () => api.delete('/admin/logs'),
 };
 
 export default api;

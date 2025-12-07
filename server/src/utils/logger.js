@@ -1,6 +1,32 @@
 import winston from 'winston';
+import Transport from 'winston-transport';
 
 const { combine, timestamp, printf, colorize, errors } = winston.format;
+
+// Custom transport to store logs in memory for API access
+class MemoryTransport extends Transport {
+  constructor(opts) {
+    super(opts);
+    this.logService = null;
+  }
+
+  setLogService(service) {
+    this.logService = service;
+  }
+
+  log(info, callback) {
+    setImmediate(() => {
+      if (this.logService) {
+        const { level, message, timestamp, stack, ...meta } = info;
+        this.logService.addLog(level, message, { ...meta, stack });
+      }
+    });
+    callback();
+  }
+}
+
+// Create memory transport instance
+const memoryTransport = new MemoryTransport();
 
 const logFormat = printf(({ level, message, timestamp, stack, ...meta }) => {
   let log = `${timestamp} [${level}]: ${message}`;
@@ -35,7 +61,13 @@ const logger = winston.createLogger({
     new winston.transports.File({
       filename: 'logs/combined.log',
     }),
+    memoryTransport,
   ],
 });
+
+// Function to initialize logger with log service (called after service is imported)
+export const initializeLogService = (logService) => {
+  memoryTransport.setLogService(logService);
+};
 
 export default logger;

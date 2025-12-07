@@ -230,6 +230,10 @@ class TwitchService {
     const channelName = channel.replace('#', '');
     const messageId = userstate['target-msg-id'];
     
+    // Get channel and user records for mod action
+    const channelRecord = await Channel.findOrCreate(channelName);
+    const targetUser = await User.findOrCreate(username);
+    
     if (messageId) {
       const deleted = await this.archiveService.markMessageDeleted(messageId);
       
@@ -240,6 +244,51 @@ class TwitchService {
         });
       }
     }
+    
+    // Record delete as a mod action so it shows up in moderation page
+    const modAction = {
+      channelId: channelRecord.id,
+      moderatorId: null, // We don't know who deleted it
+      targetUserId: targetUser.id,
+      actionType: 'delete',
+      reason: deletedMessage ? deletedMessage.substring(0, 500) : null, // Store the deleted message text as reason
+      timestamp: new Date()
+    };
+
+    const savedAction = await this.archiveService.recordModAction(modAction);
+
+    // Enriched data with usernames for WebSocket broadcasts
+    const enrichedAction = {
+      id: savedAction?.id,
+      ...modAction,
+      action_type: 'delete',
+      target_username: username,
+      targetUsername: username,
+      target_display_name: targetUser.display_name,
+      channel_name: channelName,
+      channelName,
+      channel_twitch_id: channelRecord.twitch_id,
+      last_message: deletedMessage || null,
+      message_text: deletedMessage || null
+    };
+
+    // Broadcast to channel subscribers
+    this.websocketService.broadcastModAction(channelName, enrichedAction);
+    
+    // Broadcast to global subscribers (dashboard)
+    this.websocketService.broadcastGlobalModAction(enrichedAction);
+
+    // Trigger Discord webhooks for mod actions (async, non-blocking)
+    discordWebhookService.sendModAction({
+      actionType: 'delete',
+      targetUsername: username,
+      targetDisplayName: targetUser.display_name,
+      channelName,
+      reason: null,
+      moderatorName: null,
+      lastMessage: deletedMessage || null,
+      timestamp: new Date()
+    }).catch(err => logger.debug('Webhook error (mod action):', err.message));
     
     logger.info(`Message deleted in ${channelName} from ${username}`);
   }

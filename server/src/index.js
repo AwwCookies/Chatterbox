@@ -16,7 +16,7 @@ import rateLimit from 'express-rate-limit';
 import { marked } from 'marked';
 
 import { testConnection } from './config/database.js';
-import logger from './utils/logger.js';
+import logger, { initializeLogService } from './utils/logger.js';
 
 // Services
 import ArchiveService from './services/archiveService.js';
@@ -25,6 +25,10 @@ import TwitchService from './services/twitchService.js';
 import twitchApiService from './services/twitchApiService.js';
 import ConfigService from './services/configService.js';
 import discordWebhookService from './services/discordWebhookService.js';
+import logService from './services/logService.js';
+
+// Initialize log service with logger (for memory storage)
+initializeLogService(logService);
 
 // Middleware
 import { 
@@ -128,7 +132,9 @@ app.use('/api/oauth', oauthRouter);
 app.use('/api/chat', (await import('./routes/chat.js')).default);
 app.use('/api/webhooks', (await import('./routes/webhooks.js')).default);
 app.use('/api/admin', (await import('./routes/tiers.js')).default);
+app.use('/api/admin/logs', (await import('./routes/logs.js')).default);
 app.use('/api/me', (await import('./routes/me.js')).default);
+app.use('/api/discord', (await import('./routes/discord.js')).default);
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {

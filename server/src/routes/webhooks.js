@@ -2,6 +2,7 @@ import express from 'express';
 import Webhook from '../models/Webhook.js';
 import Tier from '../models/Tier.js';
 import discordWebhookService from '../services/discordWebhookService.js';
+import discordOAuthService from '../services/discordOAuthService.js';
 import { requireUserAuth, requireAdmin } from '../middleware/auth.js';
 import { attachTier, checkWebhookLimit } from '../middleware/tierLimits.js';
 import ConfigService from '../services/configService.js';
@@ -83,6 +84,7 @@ router.post('/', requireUserAuth, attachTier, checkWebhookLimit, async (req, res
       customUsername,
       customAvatarUrl,
       includeTimestamp,
+      folder,
     } = req.body;
 
     // Validation
@@ -137,6 +139,7 @@ router.post('/', requireUserAuth, attachTier, checkWebhookLimit, async (req, res
       customUsername,
       customAvatarUrl,
       includeTimestamp,
+      folder: folder || null,
     });
 
     res.status(201).json({ 
@@ -199,6 +202,30 @@ router.put('/:id', requireUserAuth, async (req, res) => {
 router.delete('/:id', requireUserAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const { deleteFromDiscord } = req.query;
+    
+    // Get webhook info first
+    const webhookInfo = await Webhook.getDiscordWebhookInfo(id, req.user.id);
+    
+    if (!webhookInfo) {
+      return res.status(404).json({ error: 'Webhook not found' });
+    }
+    
+    // If webhook was created via OAuth and deleteFromDiscord is not false, try to delete from Discord
+    if (webhookInfo.created_via_oauth && webhookInfo.discord_webhook_id && deleteFromDiscord !== 'false') {
+      try {
+        // Extract token from webhook URL
+        const urlParts = webhookInfo.webhook_url.split('/');
+        const webhookToken = urlParts[urlParts.length - 1];
+        
+        await discordOAuthService.deleteWebhook(webhookInfo.discord_webhook_id, webhookToken);
+        logger.info(`Deleted Discord webhook ${webhookInfo.discord_webhook_id}`);
+      } catch (discordError) {
+        // Log but don't fail - webhook might already be deleted on Discord
+        logger.warn(`Failed to delete Discord webhook ${webhookInfo.discord_webhook_id}:`, discordError.message);
+      }
+    }
+    
     const result = await Webhook.deleteUserWebhook(id, req.user.id);
     
     if (!result) {
@@ -234,6 +261,127 @@ router.post('/:id/test', requireUserAuth, async (req, res) => {
   } catch (error) {
     logger.error('Error testing webhook:', error);
     res.status(500).json({ error: 'Failed to test webhook' });
+  }
+});
+
+/**
+ * POST /api/webhooks/:id/duplicate - Duplicate a webhook
+ */
+router.post('/:id/duplicate', requireUserAuth, attachTier, checkWebhookLimit, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name } = req.body;
+    
+    const webhook = await Webhook.duplicateUserWebhook(id, req.user.id, name);
+    
+    if (!webhook) {
+      return res.status(404).json({ error: 'Webhook not found' });
+    }
+
+    res.status(201).json({ 
+      webhook: {
+        ...webhook,
+        webhook_url_masked: '****' + webhook.webhook_url.slice(-8),
+      }
+    });
+  } catch (error) {
+    logger.error('Error duplicating webhook:', error);
+    res.status(500).json({ error: 'Failed to duplicate webhook' });
+  }
+});
+
+/**
+ * POST /api/webhooks/:id/reset-count - Reset trigger count
+ */
+router.post('/:id/reset-count', requireUserAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const webhook = await Webhook.resetTriggerCount(id, req.user.id);
+    
+    if (!webhook) {
+      return res.status(404).json({ error: 'Webhook not found' });
+    }
+
+    res.json({ 
+      success: true,
+      webhook: {
+        ...webhook,
+        webhook_url_masked: '****' + webhook.webhook_url.slice(-8),
+      }
+    });
+  } catch (error) {
+    logger.error('Error resetting trigger count:', error);
+    res.status(500).json({ error: 'Failed to reset trigger count' });
+  }
+});
+
+/**
+ * POST /api/webhooks/:id/mute - Toggle webhook mute status
+ */
+router.post('/:id/mute', requireUserAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const webhook = await Webhook.toggleMute(id, req.user.id);
+    
+    if (!webhook) {
+      return res.status(404).json({ error: 'Webhook not found' });
+    }
+
+    res.json({ 
+      success: true,
+      muted: webhook.muted,
+      webhook: {
+        ...webhook,
+        webhook_url_masked: '****' + webhook.webhook_url.slice(-8),
+      }
+    });
+  } catch (error) {
+    logger.error('Error toggling webhook mute:', error);
+    res.status(500).json({ error: 'Failed to toggle mute status' });
+  }
+});
+
+/**
+ * POST /api/webhooks/:id/folder - Set webhook folder
+ */
+router.post('/:id/folder', requireUserAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { folder } = req.body;
+    
+    // folder can be null/empty to remove from folder
+    const webhook = await Webhook.setFolder(id, req.user.id, folder || null);
+    
+    if (!webhook) {
+      return res.status(404).json({ error: 'Webhook not found' });
+    }
+
+    res.json({ 
+      success: true,
+      folder: webhook.folder,
+      webhook: {
+        ...webhook,
+        webhook_url_masked: '****' + webhook.webhook_url.slice(-8),
+      }
+    });
+  } catch (error) {
+    logger.error('Error setting webhook folder:', error);
+    res.status(500).json({ error: 'Failed to set folder' });
+  }
+});
+
+/**
+ * GET /api/webhooks/folders - Get user's webhook folders
+ */
+router.get('/folders', requireUserAuth, async (req, res) => {
+  try {
+    const folders = await Webhook.getUserFolders(req.user.id);
+    res.json({ folders });
+  } catch (error) {
+    logger.error('Error fetching folders:', error);
+    res.status(500).json({ error: 'Failed to fetch folders' });
   }
 });
 

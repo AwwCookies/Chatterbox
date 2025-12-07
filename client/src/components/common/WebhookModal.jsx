@@ -24,6 +24,7 @@ import {
   Plus,
   Settings,
   Zap,
+  Server,
 } from 'lucide-react';
 
 // Webhook type configurations
@@ -534,13 +535,35 @@ function EmbedCustomization({ formData, setFormData }) {
 }
 
 // Main modal component
-export default function WebhookModal({ webhook, onClose, onSave, savedUrls = [], onRefreshUrls, maxTrackedUsernames = 50 }) {
+export default function WebhookModal({ 
+  webhook, 
+  onClose, 
+  onSave, 
+  savedUrls = [], 
+  onRefreshUrls, 
+  maxTrackedUsernames = 50,
+  hideWebhookUrl = false,
+  discordChannel = null,
+  discordGuild = null,
+  saving: externalSaving = false,
+  folders = [],
+}) {
   const addToast = useToastStore(state => state.addToast);
   const isEditing = !!webhook;
+  const isDiscordCreate = hideWebhookUrl && discordChannel && discordGuild;
+  
+  // Generate default name for Discord webhooks
+  const getDefaultName = () => {
+    if (webhook?.name) return webhook.name;
+    if (isDiscordCreate && discordChannel?.name) {
+      return `#${discordChannel.name} notifications`;
+    }
+    return '';
+  };
   
   // Form state
   const [formData, setFormData] = useState({
-    name: webhook?.name || '',
+    name: getDefaultName(),
     webhookUrl: '',
     webhookType: webhook?.webhook_type || 'tracked_user_message',
     embedColor: webhook?.embed_color || '#5865F2',
@@ -548,8 +571,10 @@ export default function WebhookModal({ webhook, onClose, onSave, savedUrls = [],
     customAvatarUrl: webhook?.custom_avatar_url || '',
     includeTimestamp: webhook?.include_timestamp ?? true,
     mentionEveryone: webhook?.config?.mention_everyone ?? false,
+    folder: webhook?.folder || '',
   });
   
+  const [newFolder, setNewFolder] = useState('');
   const [trackedUsers, setTrackedUsers] = useState(webhook?.config?.tracked_usernames || []);
   const [selectedChannels, setSelectedChannels] = useState(webhook?.config?.channels || []);
   const [allChannels, setAllChannels] = useState(!webhook?.config?.channels?.length);
@@ -606,6 +631,9 @@ export default function WebhookModal({ webhook, onClose, onSave, savedUrls = [],
         config.mention_everyone = true;
       }
 
+      // Determine folder - use new folder if specified, otherwise existing selection
+      const folder = newFolder.trim() || formData.folder || null;
+
       const data = {
         name: formData.name,
         webhookType: formData.webhookType,
@@ -614,6 +642,7 @@ export default function WebhookModal({ webhook, onClose, onSave, savedUrls = [],
         customUsername: formData.customUsername || null,
         customAvatarUrl: formData.customAvatarUrl || null,
         includeTimestamp: formData.includeTimestamp,
+        folder,
       };
 
       if (!isEditing && formData.webhookUrl) {
@@ -627,7 +656,7 @@ export default function WebhookModal({ webhook, onClose, onSave, savedUrls = [],
             addToast('Webhook saved but URL could not be added to bank', 'warning');
           }
         }
-      } else if (!isEditing) {
+      } else if (!isEditing && !isDiscordCreate) {
         throw new Error('Webhook URL is required');
       }
 
@@ -694,8 +723,80 @@ export default function WebhookModal({ webhook, onClose, onSave, savedUrls = [],
                 />
               </div>
 
+              {/* Folder */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-1">Folder (optional)</label>
+                <div className="flex gap-2">
+                  {folders.length > 0 ? (
+                    <select
+                      value={formData.folder}
+                      onChange={(e) => {
+                        setFormData({ ...formData, folder: e.target.value });
+                        setNewFolder('');
+                      }}
+                      className="flex-1 bg-twitch-gray border border-gray-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-twitch-purple"
+                    >
+                      <option value="">No folder</option>
+                      {folders.map(f => (
+                        <option key={f} value={f}>{f}</option>
+                      ))}
+                    </select>
+                  ) : null}
+                  <input
+                    type="text"
+                    value={newFolder}
+                    onChange={(e) => {
+                      setNewFolder(e.target.value);
+                      setFormData({ ...formData, folder: '' });
+                    }}
+                    placeholder={folders.length > 0 ? "Or create new folder" : "Create folder"}
+                    className={`${folders.length > 0 ? 'w-40' : 'flex-1'} bg-twitch-gray border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-twitch-purple text-sm`}
+                  />
+                </div>
+              </div>
+
+              {/* Discord Channel Info (when creating via OAuth) */}
+              {isDiscordCreate && (
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+                  <div className="flex items-center gap-2 text-blue-400 text-sm">
+                    <Hash className="w-4 h-4" />
+                    <span>Creating webhook in: <strong>{discordGuild.name}</strong> → #{discordChannel.name}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Discord Channel Info (when creating via Discord) */}
+              {isDiscordCreate && (
+                <div className="p-3 bg-[#5865F2]/10 border border-[#5865F2]/30 rounded-lg">
+                  <div className="flex items-center gap-2 text-sm text-gray-300 mb-2">
+                    <Server className="w-4 h-4 text-[#5865F2]" />
+                    <span className="font-medium">Creating webhook via Discord</span>
+                  </div>
+                  <div className="flex items-center gap-4 text-sm">
+                    <div className="flex items-center gap-2">
+                      {discordGuild?.icon ? (
+                        <img 
+                          src={`https://cdn.discordapp.com/icons/${discordGuild.id}/${discordGuild.icon}.png?size=32`}
+                          alt={discordGuild.name}
+                          className="w-5 h-5 rounded-full"
+                        />
+                      ) : (
+                        <div className="w-5 h-5 rounded-full bg-[#5865F2] flex items-center justify-center text-xs text-white">
+                          {discordGuild?.name?.charAt(0) || 'S'}
+                        </div>
+                      )}
+                      <span className="text-white">{discordGuild?.name}</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-gray-400">
+                      <Hash className="w-4 h-4" />
+                      <span>{discordChannel?.name}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Webhook URL */}
-              {!isEditing && (
+              {!isEditing && !hideWebhookUrl && (
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-1">Discord Webhook URL</label>
                   
@@ -866,10 +967,10 @@ export default function WebhookModal({ webhook, onClose, onSave, savedUrls = [],
           </button>
           <button
             onClick={handleSubmit}
-            disabled={saving}
+            disabled={saving || externalSaving}
             className="px-6 py-2 bg-twitch-purple hover:bg-twitch-purple-dark disabled:bg-gray-600 text-white rounded-lg transition-colors flex items-center gap-2"
           >
-            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+            {(saving || externalSaving) && <Loader2 className="w-4 h-4 animate-spin" />}
             {isEditing ? 'Save Changes' : 'Create Webhook'}
           </button>
         </div>

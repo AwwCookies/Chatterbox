@@ -24,6 +24,7 @@
   - [User Data Requests](#user-data-requests)
   - [Admin User Request Management](#admin-user-request-management)
   - [Webhooks](#webhooks-discord-notifications)
+  - [Discord OAuth Integration](#discord-oauth-integration)
   - [Admin Tiers](#admin-tiers)
   - [User Self-Service](#user-self-service)
 - [WebSocket API](#websocket-api)
@@ -2401,6 +2402,129 @@ Delete an IP rule by its ID.
 
 ---
 
+### Server Logs
+
+Access server logs in real-time for monitoring and debugging.
+
+#### Get Logs
+`GET /api/admin/logs`
+
+Retrieve server logs with filtering and pagination.
+
+**Authentication:** Bearer token (admin) or X-API-Key required
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `level` | string | - | Filter by log level(s), comma-separated (error,warn,info,debug) |
+| `search` | string | - | Search term to filter logs by message or metadata |
+| `since` | ISO8601 | - | Get logs after this timestamp |
+| `until` | ISO8601 | - | Get logs before this timestamp |
+| `limit` | number | 100 | Maximum logs to return (max 1000) |
+| `offset` | number | 0 | Pagination offset |
+| `order` | string | desc | Sort order: 'asc' or 'desc' |
+
+**Response:**
+```json
+{
+  "logs": [
+    {
+      "id": 12345,
+      "timestamp": "2025-12-06T23:30:00.000Z",
+      "level": "info",
+      "message": "User xrubenxo timed out for 30s in vedal987",
+      "meta": {
+        "userId": 1321575,
+        "channelId": 38
+      }
+    }
+  ],
+  "total": 5000,
+  "limit": 100,
+  "offset": 0,
+  "hasMore": true
+}
+```
+
+---
+
+#### Get Log Statistics
+`GET /api/admin/logs/stats`
+
+Get summary statistics about current logs.
+
+**Authentication:** Bearer token (admin) or X-API-Key required
+
+**Response:**
+```json
+{
+  "total": 10000,
+  "byLevel": {
+    "error": 42,
+    "warn": 156,
+    "info": 9500,
+    "debug": 302
+  },
+  "recentErrors": [
+    {
+      "id": 9999,
+      "timestamp": "2025-12-06T23:29:40.000Z",
+      "level": "error",
+      "message": "Query error: duplicate key value violates unique constraint"
+    }
+  ],
+  "oldestLog": "2025-12-06T20:00:00.000Z",
+  "newestLog": "2025-12-06T23:30:00.000Z"
+}
+```
+
+---
+
+#### Stream Logs
+`GET /api/admin/logs/stream`
+
+Get new logs since a given ID (for real-time polling).
+
+**Authentication:** Bearer token (admin) or X-API-Key required
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `lastId` | number | 0 | Get logs with ID greater than this |
+
+**Response:**
+```json
+{
+  "logs": [
+    {
+      "id": 12346,
+      "timestamp": "2025-12-06T23:30:01.000Z",
+      "level": "info",
+      "message": "Flushed 156 messages to database"
+    }
+  ],
+  "lastId": 12346
+}
+```
+
+---
+
+#### Clear Logs
+`DELETE /api/admin/logs`
+
+Clear all in-memory logs.
+
+**Authentication:** Bearer token (admin) or X-API-Key required
+
+**Response:**
+```json
+{
+  "message": "Logs cleared"
+}
+```
+
+---
+
 ### OAuth Authentication (User Login)
 
 Chatterbox supports Twitch OAuth login for users to access personalized features like viewing their followed channels.
@@ -3005,6 +3129,9 @@ Get all webhooks for the authenticated user.
         "tracked_usernames": ["streamer1", "streamer2"]
       },
       "enabled": true,
+      "muted": false,
+      "folder": "Alerts",
+      "trigger_count": 42,
       "consecutive_failures": 0,
       "last_triggered_at": "2025-01-16T10:30:00.000Z",
       "created_at": "2025-01-15T08:00:00.000Z"
@@ -3017,6 +3144,14 @@ Get all webhooks for the authenticated user.
   }
 }
 ```
+
+**Webhook Fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `muted` | boolean | If true, webhook won't trigger but remains configured |
+| `folder` | string | Optional folder name for organization |
+| `trigger_count` | number | Total times this webhook has fired |
+| `last_triggered_at` | timestamp | When the webhook last fired |
 
 ---
 
@@ -3130,6 +3265,150 @@ Send a test notification to verify the webhook is working.
 **Errors:**
 - `400`: Webhook is disabled
 - `500`: Failed to send test notification
+
+---
+
+#### Duplicate Webhook
+`POST /api/webhooks/:id/duplicate`
+
+**Authentication:** Bearer token required
+
+Create a copy of an existing webhook with a new name.
+
+**Request Body:**
+```json
+{
+  "name": "Copy of My Webhook"
+}
+```
+
+**Response:**
+```json
+{
+  "webhook": {
+    "id": 2,
+    "name": "Copy of My Webhook",
+    "webhook_type": "mod_action",
+    "webhook_url_masked": "****abcd1234",
+    "enabled": true,
+    "muted": false,
+    "folder": null,
+    "trigger_count": 0,
+    "last_triggered_at": null,
+    "created_at": "2025-01-15T08:00:00.000Z"
+  }
+}
+```
+
+**Errors:**
+- `404`: Webhook not found
+
+---
+
+#### Toggle Webhook Mute
+`POST /api/webhooks/:id/mute`
+
+**Authentication:** Bearer token required
+
+Toggle the mute status of a webhook. Muted webhooks remain configured but won't send notifications.
+
+**Response:**
+```json
+{
+  "success": true,
+  "muted": true,
+  "webhook": {
+    "id": 1,
+    "name": "My Webhook",
+    "muted": true,
+    "webhook_url_masked": "****abcd1234"
+  }
+}
+```
+
+**Errors:**
+- `404`: Webhook not found
+
+---
+
+#### Reset Trigger Count
+`POST /api/webhooks/:id/reset-count`
+
+**Authentication:** Bearer token required
+
+Reset the trigger count for a webhook back to zero.
+
+**Response:**
+```json
+{
+  "success": true,
+  "webhook": {
+    "id": 1,
+    "name": "My Webhook",
+    "trigger_count": 0,
+    "webhook_url_masked": "****abcd1234"
+  }
+}
+```
+
+**Errors:**
+- `404`: Webhook not found
+
+---
+
+#### Set Webhook Folder
+`POST /api/webhooks/:id/folder`
+
+**Authentication:** Bearer token required
+
+Assign a webhook to a folder for organization. Folders are created implicitly when assigned.
+
+**Request Body:**
+```json
+{
+  "folder": "Mod Alerts"
+}
+```
+
+To remove from folder, pass `null` or empty string:
+```json
+{
+  "folder": null
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "folder": "Mod Alerts",
+  "webhook": {
+    "id": 1,
+    "name": "My Webhook",
+    "folder": "Mod Alerts",
+    "webhook_url_masked": "****abcd1234"
+  }
+}
+```
+
+**Errors:**
+- `404`: Webhook not found
+
+---
+
+#### List User Folders
+`GET /api/webhooks/folders`
+
+**Authentication:** Bearer token required
+
+Get all unique folder names used by the user's webhooks.
+
+**Response:**
+```json
+{
+  "folders": ["Mod Alerts", "Stream Notifications", "Tracked Users"]
+}
+```
 
 ---
 
@@ -3306,6 +3585,303 @@ Get all admin webhooks for system events.
 **Authentication:** Bearer token (admin required)
 
 Send a test notification to verify the webhook.
+
+---
+
+### Discord OAuth Integration
+
+Discord OAuth allows users to connect their Discord accounts and automatically create webhooks in their Discord servers without manually copying webhook URLs.
+
+#### Prerequisites
+
+**1. Environment Variables Required:**
+```
+DISCORD_CLIENT_ID=your_discord_app_client_id
+DISCORD_CLIENT_SECRET=your_discord_app_secret
+DISCORD_REDIRECT_URI=https://your-domain.com/api/discord/callback
+DISCORD_BOT_TOKEN=your_discord_bot_token
+```
+
+**2. Discord Bot Setup:**
+
+The Discord integration requires a bot to be added to servers for fetching channels and creating webhooks. Users must add the Chatterbox bot to their Discord server before they can use the auto-create webhook feature.
+
+**Bot Invite URL:**
+```
+https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=536870912&scope=bot
+```
+
+Replace `YOUR_CLIENT_ID` with your Discord application's client ID.
+
+**Required Bot Permissions:**
+- `Manage Webhooks` (permission value: 536870912)
+
+**How to Add the Bot to a Discord Server:**
+1. Open the bot invite URL in a web browser
+2. Select the Discord server you want to add the bot to (you must have "Manage Server" permission)
+3. Ensure the "Manage Webhooks" permission is enabled
+4. Click "Authorize"
+5. Complete the CAPTCHA if prompted
+
+**Note:** The bot only needs to be in servers where users want to create webhooks. It does not read messages or have any other permissions.
+
+---
+
+#### Get Discord Connection Status
+`GET /api/discord/status`
+
+**Authentication:** Bearer token required
+
+Check if the current user has Discord connected and get connection details.
+
+**Response (Not Connected):**
+```json
+{
+  "connected": false
+}
+```
+
+**Response (Connected):**
+```json
+{
+  "connected": true,
+  "discordId": "123456789012345678",
+  "username": "User#1234",
+  "discriminator": "1234",
+  "avatar": "a_abc123",
+  "avatarUrl": "https://cdn.discordapp.com/avatars/123456789012345678/a_abc123.png",
+  "connectedAt": "2025-01-15T10:30:00.000Z",
+  "guildsCount": 5,
+  "channelsCount": 25
+}
+```
+
+---
+
+#### Connect Discord Account
+`GET /api/discord/connect`
+
+**Authentication:** Bearer token required
+
+Initiates Discord OAuth flow. Redirects to Discord's authorization page.
+
+**Query Parameters:**
+- `returnUrl` (optional): URL to return to after connection (default: `/webhooks`)
+
+**Response:** 302 Redirect to Discord OAuth
+
+---
+
+#### Discord OAuth Callback
+`GET /api/discord/callback`
+
+**Internal endpoint** - handles Discord OAuth callback. Do not call directly.
+
+**Query Parameters:**
+- `code`: Authorization code from Discord
+- `state`: CSRF state token
+
+**Success:** Redirects to `{CLIENT_URL}{returnUrl}?discord=connected`
+**Error:** Redirects to `{CLIENT_URL}/webhooks?error={error_message}`
+
+---
+
+#### Disconnect Discord
+`POST /api/discord/disconnect`
+
+**Authentication:** Bearer token required
+
+Disconnects Discord account and optionally deletes webhooks created via Discord OAuth.
+
+**Request Body:**
+```json
+{
+  "deleteWebhooks": false
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `deleteWebhooks` | boolean | If true, also deletes webhooks created via Discord OAuth from both Chatterbox and Discord |
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Discord disconnected"
+}
+```
+
+---
+
+#### Get Discord Servers (Guilds)
+`GET /api/discord/guilds`
+
+**Authentication:** Bearer token required + Discord connected
+
+Returns list of Discord servers where the user has "Manage Webhooks" permission.
+
+**Query Parameters:**
+- `refresh` (optional): Set to `true` to force refresh from Discord API
+
+**Response:**
+```json
+{
+  "guilds": [
+    {
+      "id": "123456789012345678",
+      "name": "My Cool Server",
+      "icon": "a_abc123",
+      "iconUrl": "https://cdn.discordapp.com/icons/123456789012345678/a_abc123.png",
+      "hasWebhookPermission": true,
+      "owner": false,
+      "permissions": "2147483647",
+      "cachedAt": "2025-01-15T10:30:00.000Z"
+    }
+  ]
+}
+```
+
+**Errors:**
+- `400`: Discord is not connected
+- `401`: Discord session expired - please reconnect (code: `DISCORD_EXPIRED`)
+
+---
+
+#### Get Discord Channels
+`GET /api/discord/guilds/:guildId/channels`
+
+**Authentication:** Bearer token required + Discord connected
+
+Returns list of text and announcement channels in a Discord server.
+
+**Query Parameters:**
+- `refresh` (optional): Set to `true` to force refresh from Discord API
+
+**Response:**
+```json
+{
+  "channels": [
+    {
+      "id": "987654321098765432",
+      "name": "general",
+      "type": 0,
+      "position": 0,
+      "parentId": null,
+      "parentName": null,
+      "cachedAt": "2025-01-15T10:30:00.000Z"
+    },
+    {
+      "id": "876543210987654321",
+      "name": "announcements",
+      "type": 5,
+      "position": 1,
+      "parentId": "111222333444555666",
+      "parentName": "Info",
+      "cachedAt": "2025-01-15T10:30:00.000Z"
+    }
+  ],
+  "categorized": [
+    {
+      "id": "111222333444555666",
+      "name": "Info",
+      "channels": [...]
+    }
+  ],
+  "uncategorized": [...]
+}
+```
+
+**Channel Types:**
+- `0`: GUILD_TEXT (text channel)
+- `5`: GUILD_ANNOUNCEMENT (announcement channel)
+
+**Errors:**
+- `400`: Discord is not connected
+- `403`: You do not have access to this server
+- `403`: Missing access to this server (lost permissions)
+- `401`: Discord session expired - please reconnect
+
+---
+
+#### Create Webhook via Discord OAuth
+`POST /api/discord/guilds/:guildId/channels/:channelId/webhook`
+
+**Authentication:** Bearer token required + Discord connected
+
+Creates a webhook in the specified Discord channel and saves it to Chatterbox.
+
+**Request Body:**
+```json
+{
+  "name": "Tracked Users Alert",
+  "webhookType": "tracked_user_message",
+  "config": {
+    "tracked_usernames": ["streamer1", "streamer2"]
+  },
+  "embedColor": "#5865F2",
+  "customUsername": "Chatterbox",
+  "customAvatarUrl": null,
+  "includeTimestamp": true
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | **Required.** Webhook name in Chatterbox |
+| `webhookType` | string | **Required.** One of: `tracked_user_message`, `mod_action`, `channel_live`, `channel_offline`, `channel_game_change` |
+| `config` | object | Configuration based on webhook type |
+| `embedColor` | string | Hex color for Discord embeds (default: `#5865F2`) |
+| `customUsername` | string | Custom bot username for webhook |
+| `customAvatarUrl` | string | Custom avatar URL |
+| `includeTimestamp` | boolean | Include timestamps in embeds (default: `true`) |
+
+**Response:**
+```json
+{
+  "webhook": {
+    "id": 1,
+    "name": "Tracked Users Alert",
+    "webhook_type": "tracked_user_message",
+    "webhook_url_masked": "****abcd1234",
+    "discord_guild_id": "123456789012345678",
+    "discord_guild_name": "My Cool Server",
+    "discord_channel_id": "987654321098765432",
+    "discord_channel_name": "general",
+    "discord_webhook_id": "111222333444555666",
+    "created_via_oauth": true,
+    "created_at": "2025-01-15T10:30:00.000Z"
+  },
+  "discordWebhookId": "111222333444555666"
+}
+```
+
+**Errors:**
+- `400`: Name and webhook type are required
+- `400`: Invalid webhook type
+- `400`: Discord is not connected
+- `403`: You do not have access to this server
+- `403`: Missing permissions to create webhooks in this channel
+- `400`: Maximum webhooks reached for this channel (Discord limit)
+- `401`: Discord session expired - please reconnect
+
+---
+
+#### Refresh Discord Connection
+`POST /api/discord/refresh`
+
+**Authentication:** Bearer token required + Discord connected
+
+Refreshes the Discord guilds cache and checks webhook status.
+
+**Response:**
+```json
+{
+  "success": true,
+  "guildsCount": 5,
+  "webhooksCount": 3
+}
+```
 
 ---
 

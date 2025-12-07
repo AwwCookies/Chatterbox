@@ -218,28 +218,30 @@ class ApiUsage {
    */
   static async getResponseTimeDistribution(since, until) {
     const result = await pool.query(`
-      SELECT 
-        CASE 
-          WHEN response_time_ms < 100 THEN '< 100ms'
-          WHEN response_time_ms < 500 THEN '100-500ms'
-          WHEN response_time_ms < 1000 THEN '500ms-1s'
-          WHEN response_time_ms < 5000 THEN '1-5s'
-          ELSE '> 5s'
-        END as bucket,
-        COUNT(*) as count
-      FROM api_usage
-      WHERE created_at >= $1
-        AND created_at <= $2
-        AND response_time_ms IS NOT NULL
-      GROUP BY bucket
-      ORDER BY 
-        CASE bucket
-          WHEN '< 100ms' THEN 1
-          WHEN '100-500ms' THEN 2
-          WHEN '500ms-1s' THEN 3
-          WHEN '1-5s' THEN 4
-          ELSE 5
-        END
+      SELECT bucket, count FROM (
+        SELECT 
+          CASE 
+            WHEN response_time_ms < 100 THEN '< 100ms'
+            WHEN response_time_ms < 500 THEN '100-500ms'
+            WHEN response_time_ms < 1000 THEN '500ms-1s'
+            WHEN response_time_ms < 5000 THEN '1-5s'
+            ELSE '> 5s'
+          END as bucket,
+          CASE 
+            WHEN response_time_ms < 100 THEN 1
+            WHEN response_time_ms < 500 THEN 2
+            WHEN response_time_ms < 1000 THEN 3
+            WHEN response_time_ms < 5000 THEN 4
+            ELSE 5
+          END as sort_order,
+          COUNT(*) as count
+        FROM api_usage
+        WHERE created_at >= $1
+          AND created_at <= $2
+          AND response_time_ms IS NOT NULL
+        GROUP BY 1, 2
+      ) sub
+      ORDER BY sort_order
     `, [since, until]);
 
     return result.rows;

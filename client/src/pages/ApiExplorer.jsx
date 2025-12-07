@@ -34,7 +34,8 @@ import {
   Radio,
   Settings,
   Activity,
-  Send
+  Send,
+  ScrollText
 } from 'lucide-react';
 
 // Dynamically determine API URL based on current location
@@ -239,6 +240,18 @@ const apiEndpoints = [
     ]
   },
   {
+    category: 'Admin - Server Logs',
+    icon: ScrollText,
+    color: 'slate',
+    description: 'Server log access and management',
+    endpoints: [
+      { method: 'GET', path: '/admin/logs', description: 'Get server logs', params: ['level', 'search', 'since', 'until', 'limit', 'offset', 'order'], auth: 'apiKey' },
+      { method: 'GET', path: '/admin/logs/stats', description: 'Get log statistics', params: [], auth: 'apiKey' },
+      { method: 'GET', path: '/admin/logs/stream', description: 'Stream new logs since ID', params: ['lastId'], auth: 'apiKey' },
+      { method: 'DELETE', path: '/admin/logs', description: 'Clear all logs', params: [], auth: 'apiKey' },
+    ]
+  },
+  {
     category: 'Admin - User Management',
     icon: Users,
     color: 'violet',
@@ -261,10 +274,15 @@ const apiEndpoints = [
     description: 'Discord webhook management for notifications',
     endpoints: [
       { method: 'GET', path: '/webhooks', description: 'List user webhooks', params: [], auth: 'bearer' },
-      { method: 'POST', path: '/webhooks', description: 'Create user webhook', params: [], body: { name: 'My Webhook', webhookType: 'mod_action', webhookUrl: 'https://discord.com/api/webhooks/...', config: { action_types: ['ban', 'timeout'] } }, auth: 'bearer' },
-      { method: 'PUT', path: '/webhooks/:id', description: 'Update user webhook', params: ['id'], body: { name: 'Updated Name', enabled: true }, auth: 'bearer' },
+      { method: 'POST', path: '/webhooks', description: 'Create user webhook', params: [], body: { name: 'My Webhook', webhookType: 'mod_action', webhookUrl: 'https://discord.com/api/webhooks/...', config: { action_types: ['ban', 'timeout'] }, folder: 'Alerts' }, auth: 'bearer' },
+      { method: 'PUT', path: '/webhooks/:id', description: 'Update user webhook', params: ['id'], body: { name: 'Updated Name', enabled: true, folder: 'Alerts' }, auth: 'bearer' },
       { method: 'DELETE', path: '/webhooks/:id', description: 'Delete user webhook', params: ['id'], auth: 'bearer' },
       { method: 'POST', path: '/webhooks/:id/test', description: 'Test user webhook', params: ['id'], auth: 'bearer' },
+      { method: 'POST', path: '/webhooks/:id/duplicate', description: 'Duplicate webhook', params: ['id'], body: { name: 'Copy of Webhook' }, auth: 'bearer' },
+      { method: 'POST', path: '/webhooks/:id/mute', description: 'Toggle webhook mute', params: ['id'], auth: 'bearer' },
+      { method: 'POST', path: '/webhooks/:id/reset-count', description: 'Reset trigger count', params: ['id'], auth: 'bearer' },
+      { method: 'POST', path: '/webhooks/:id/folder', description: 'Set webhook folder', params: ['id'], body: { folder: 'My Folder' }, auth: 'bearer' },
+      { method: 'GET', path: '/webhooks/folders', description: 'List user folders', params: [], auth: 'bearer' },
       { method: 'GET', path: '/webhooks/urls', description: 'List saved webhook URLs', params: [], auth: 'bearer' },
       { method: 'POST', path: '/webhooks/urls', description: 'Save webhook URL to bank', params: [], body: { name: 'Mod Alerts', webhookUrl: 'https://discord.com/api/webhooks/...' }, auth: 'bearer' },
       { method: 'PUT', path: '/webhooks/urls/:id', description: 'Update saved URL name', params: ['id'], body: { name: 'New Name' }, auth: 'bearer' },
@@ -274,6 +292,22 @@ const apiEndpoints = [
       { method: 'PUT', path: '/webhooks/admin/:id', description: 'Update admin webhook', params: ['id'], body: { name: 'Updated Name', enabled: true }, auth: 'bearer' },
       { method: 'DELETE', path: '/webhooks/admin/:id', description: 'Delete admin webhook', params: ['id'], auth: 'bearer' },
       { method: 'POST', path: '/webhooks/admin/:id/test', description: 'Test admin webhook', params: ['id'], auth: 'bearer' },
+    ]
+  },
+  {
+    category: 'Discord OAuth',
+    icon: Zap,
+    color: 'indigo',
+    description: 'Discord OAuth integration for automatic webhook creation',
+    endpoints: [
+      { method: 'GET', path: '/discord/connect', description: 'Get Discord OAuth URL', params: [], auth: 'bearer', note: 'Returns URL - redirect user to it' },
+      { method: 'GET', path: '/discord/callback', description: 'OAuth callback (internal)', params: ['code', 'state'], auth: 'none', note: 'Called by Discord' },
+      { method: 'GET', path: '/discord/status', description: 'Get Discord connection status', params: [], auth: 'bearer' },
+      { method: 'GET', path: '/discord/guilds', description: 'List Discord servers', params: ['refresh'], auth: 'bearer' },
+      { method: 'GET', path: '/discord/guilds/:guildId/channels', description: 'List server channels', params: ['guildId', 'refresh'], auth: 'bearer' },
+      { method: 'POST', path: '/discord/guilds/:guildId/channels/:channelId/webhook', description: 'Create webhook in channel', params: ['guildId', 'channelId'], body: { name: 'Chatterbox Alerts' }, auth: 'bearer' },
+      { method: 'POST', path: '/discord/disconnect', description: 'Disconnect Discord account', params: [], auth: 'bearer' },
+      { method: 'POST', path: '/discord/refresh', description: 'Refresh Discord token', params: [], auth: 'bearer' },
     ]
   },
   {

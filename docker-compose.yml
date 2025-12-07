@@ -41,6 +41,10 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
       API_KEY: ${API_KEY}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:-}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:-}
+      DISCORD_REDIRECT_URI: ${DISCORD_REDIRECT_URI:-http://localhost:3000/api/discord/callback}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
     ports:
       - "3000:3000"
     depends_on:

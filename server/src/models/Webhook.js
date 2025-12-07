@@ -16,16 +16,65 @@ class Webhook {
       customUsername,
       customAvatarUrl,
       includeTimestamp = true,
+      folder = null,
     } = data;
 
     const result = await query(
       `INSERT INTO user_webhooks 
-       (oauth_user_id, name, webhook_url, webhook_type, config, embed_color, custom_username, custom_avatar_url, include_timestamp)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (oauth_user_id, name, webhook_url, webhook_type, config, embed_color, custom_username, custom_avatar_url, include_timestamp, folder)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [oauthUserId, name, webhookUrl, webhookType, JSON.stringify(config), embedColor, customUsername, customAvatarUrl, includeTimestamp]
+      [oauthUserId, name, webhookUrl, webhookType, JSON.stringify(config), embedColor, customUsername, customAvatarUrl, includeTimestamp, folder]
     );
 
+    return result.rows[0];
+  }
+
+  /**
+   * Create a user webhook with Discord OAuth metadata
+   */
+  static async createUserWebhookWithDiscord(data) {
+    const {
+      oauthUserId,
+      name,
+      webhookUrl,
+      webhookType,
+      config = {},
+      embedColor = '#5865F2',
+      customUsername,
+      customAvatarUrl,
+      includeTimestamp = true,
+      discordGuildId,
+      discordGuildName,
+      discordChannelId,
+      discordChannelName,
+      discordWebhookId,
+      createdViaOauth = true,
+      folder = null,
+    } = data;
+
+    const result = await query(
+      `INSERT INTO user_webhooks 
+       (oauth_user_id, name, webhook_url, webhook_type, config, embed_color, custom_username, custom_avatar_url, include_timestamp,
+        discord_guild_id, discord_guild_name, discord_channel_id, discord_channel_name, discord_webhook_id, created_via_oauth, folder)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+       RETURNING *`,
+      [oauthUserId, name, webhookUrl, webhookType, JSON.stringify(config), embedColor, customUsername, customAvatarUrl, includeTimestamp,
+       discordGuildId, discordGuildName, discordChannelId, discordChannelName, discordWebhookId, createdViaOauth, folder]
+    );
+
+    return result.rows[0];
+  }
+
+  /**
+   * Get Discord webhook info for deletion
+   */
+  static async getDiscordWebhookInfo(id, oauthUserId) {
+    const result = await query(
+      `SELECT id, webhook_url, discord_webhook_id, created_via_oauth 
+       FROM user_webhooks WHERE id = $1 AND oauth_user_id = $2`,
+      [id, oauthUserId]
+    );
     return result.rows[0];
   }
 
@@ -57,7 +106,7 @@ class Webhook {
    * Update a user webhook
    */
   static async updateUserWebhook(id, oauthUserId, updates) {
-    const allowedFields = ['name', 'webhook_url', 'config', 'embed_color', 'custom_username', 'custom_avatar_url', 'include_timestamp', 'enabled'];
+    const allowedFields = ['name', 'webhook_url', 'config', 'embed_color', 'custom_username', 'custom_avatar_url', 'include_timestamp', 'enabled', 'muted', 'folder'];
     const setClauses = [];
     const values = [];
     let paramIndex = 1;
@@ -87,6 +136,61 @@ class Webhook {
   }
 
   /**
+   * Reset trigger count for a user webhook
+   */
+  static async resetTriggerCount(id, oauthUserId) {
+    const result = await query(
+      `UPDATE user_webhooks SET trigger_count = 0, updated_at = NOW()
+       WHERE id = $1 AND oauth_user_id = $2
+       RETURNING *`,
+      [id, oauthUserId]
+    );
+    return result.rows[0];
+  }
+
+  /**
+   * Get unique folders for a user
+   */
+  static async getUserFolders(oauthUserId) {
+    const result = await query(
+      `SELECT DISTINCT folder FROM user_webhooks 
+       WHERE oauth_user_id = $1 AND folder IS NOT NULL
+       ORDER BY folder`,
+      [oauthUserId]
+    );
+    return result.rows.map(r => r.folder);
+  }
+
+  /**
+   * Duplicate a user webhook
+   */
+  static async duplicateUserWebhook(id, oauthUserId, newName) {
+    const original = await this.getUserWebhookById(id, oauthUserId);
+    if (!original) return null;
+
+    const result = await query(
+      `INSERT INTO user_webhooks 
+       (oauth_user_id, name, webhook_url, webhook_type, config, embed_color, custom_username, custom_avatar_url, include_timestamp, folder)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING *`,
+      [
+        oauthUserId,
+        newName || `${original.name} (copy)`,
+        original.webhook_url,
+        original.webhook_type,
+        JSON.stringify(original.config),
+        original.embed_color,
+        original.custom_username,
+        original.custom_avatar_url,
+        original.include_timestamp,
+        original.folder,
+      ]
+    );
+
+    return result.rows[0];
+  }
+
+  /**
    * Delete a user webhook
    */
   static async deleteUserWebhook(id, oauthUserId) {
@@ -98,14 +202,14 @@ class Webhook {
   }
 
   /**
-   * Get enabled webhooks by type
+   * Get enabled webhooks by type (excludes muted webhooks)
    */
   static async getEnabledWebhooksByType(webhookType) {
     const result = await query(
       `SELECT w.*, u.username as owner_username 
        FROM user_webhooks w
        JOIN oauth_users u ON w.oauth_user_id = u.id
-       WHERE w.webhook_type = $1 AND w.enabled = TRUE AND w.consecutive_failures < 5`,
+       WHERE w.webhook_type = $1 AND w.enabled = TRUE AND w.muted = FALSE AND w.consecutive_failures < 5`,
       [webhookType]
     );
     return result.rows;

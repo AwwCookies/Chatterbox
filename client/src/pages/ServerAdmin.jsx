@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { Server, FileText, Settings, Activity, Shield, Users, Webhook, Crown, BarChart3 } from 'lucide-react';
+import { Server, FileText, Settings, Activity, Shield, Users, Webhook, Crown, BarChart3, Hash, ScrollText } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
 import ServerStatusTab from '../components/admin/ServerStatusTab';
 import ServerSettingsTab from '../components/admin/ServerSettingsTab';
@@ -11,9 +11,13 @@ import UserManagementTab from '../components/admin/UserManagementTab';
 import AdminWebhooksTab from '../components/admin/AdminWebhooksTab';
 import TiersManagement from '../components/admin/TiersManagement';
 import UsageAnalytics from '../components/admin/UsageAnalytics';
+import ChannelsManagementTab from '../components/admin/ChannelsManagementTab';
+import LogViewerTab from '../components/admin/LogViewerTab';
 
 const tabs = [
   { id: 'status', label: 'Server Status', icon: Server },
+  { id: 'logs', label: 'Logs', icon: ScrollText },
+  { id: 'channels', label: 'Channels', icon: Hash },
   { id: 'settings', label: 'Settings', icon: Settings },
   { id: 'traffic', label: 'Traffic Analytics', icon: Activity },
   { id: 'usage', label: 'API Usage', icon: BarChart3 },
@@ -56,6 +60,8 @@ function ServerAdmin() {
 
       {/* Tab Content */}
       {activeTab === 'status' && <ServerStatusTab />}
+      {activeTab === 'logs' && <LogViewerTab />}
+      {activeTab === 'channels' && <ChannelsManagementTab />}
       {activeTab === 'settings' && <ServerSettingsTab />}
       {activeTab === 'traffic' && <TrafficAnalyticsTab />}
       {activeTab === 'usage' && <UsageAnalytics />}

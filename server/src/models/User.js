@@ -5,6 +5,7 @@ class User {
   /**
    * Find or create a user, updating last_seen
    * Skips blocked users if skipBlocked is true
+   * Handles username changes by updating existing records with matching twitch_id
    */
   static async findOrCreate(username, twitchId = null, displayName = null, skipBlocked = true) {
     const normalizedUsername = username.toLowerCase();
@@ -20,7 +21,30 @@ class User {
       }
     }
     
-    // Try upsert
+    // If we have a twitch_id, first check if it exists under a different username (name change)
+    if (twitchId) {
+      const existingByTwitchId = await query(
+        'SELECT id, username FROM users WHERE twitch_id = $1',
+        [twitchId]
+      );
+      
+      if (existingByTwitchId.rows[0] && existingByTwitchId.rows[0].username !== normalizedUsername) {
+        // User changed their username - update the existing record
+        const result = await query(
+          `UPDATE users SET 
+             username = $1,
+             display_name = COALESCE($2, display_name),
+             last_seen = NOW()
+           WHERE twitch_id = $3
+           RETURNING *`,
+          [normalizedUsername, displayName || username, twitchId]
+        );
+        logger.debug(`Updated username ${existingByTwitchId.rows[0].username} -> ${normalizedUsername} for twitch_id ${twitchId}`);
+        return result.rows[0];
+      }
+    }
+    
+    // Standard upsert by username
     const result = await query(
       `INSERT INTO users (username, twitch_id, display_name, first_seen, last_seen)
        VALUES ($1, $2, $3, NOW(), NOW())
